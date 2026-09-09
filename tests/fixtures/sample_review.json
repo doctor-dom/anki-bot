@@ -1,0 +1,46 @@
+{
+  "item": {
+    "stem_gist": "Newborn with ambiguous genitalia, salt-wasting crisis.",
+    "choices": [
+      {"letter": "A", "text": "11-beta-hydroxylase deficiency"},
+      {"letter": "B", "text": "21-hydroxylase deficiency"},
+      {"letter": "C", "text": "17-alpha-hydroxylase deficiency"}
+    ],
+    "correct_letter": "B",
+    "correct_text": "21-hydroxylase deficiency",
+    "confidence": 0.95
+  },
+  "stem_clues": ["newborn", "ambiguous genitalia", "salt-wasting"],
+  "correct_pearl": "21-hydroxylase deficiency blocks cortisol and aldosterone synthesis.",
+  "distractors": [
+    {
+      "letter": "A",
+      "text": "11-beta-hydroxylase deficiency",
+      "why_tempting": "Also causes virilization",
+      "why_wrong": "Causes hypertension from DOC excess, not salt-wasting",
+      "reusable_fact": "11-beta-hydroxylase: virilization + hypertension"
+    }
+  ],
+  "high_yield": [
+    {"text": "21-hydroxylase deficiency", "category": "topic", "source": "explanation"},
+    {"text": "virilization; salt-wasting", "category": "neg", "source": "explanation"},
+    {"text": "elevated 17-OHP", "category": "dx", "source": "explanation"},
+    {"text": "glucocorticoid + mineralocorticoid", "category": "tx", "source": "explanation"},
+    {"text": "unlike 11-beta-hydroxylase: no hypertension from DOC excess", "category": "diff", "source": "explanation"}
+  ],
+  "cards": [
+    {
+      "text": "<span class=\"hy-topic\">{{c1::21-hydroxylase deficiency}}</span> causes <span class=\"hy-neg\">virilization and salt-wasting</span>.",
+      "extra": "<span class=\"hy-diff\">Unlike 11-beta-hydroxylase: no hypertension from DOC excess.</span>",
+      "tags": ["anki-bot::adrenal", "cah"],
+      "source": "explanation"
+    },
+    {
+      "text": "<span class=\"hy-dx\">{{c1::Elevated 17-OHP}}</span> supports <span class=\"hy-topic\">21-hydroxylase deficiency</span>.",
+      "extra": "",
+      "tags": ["anki-bot::adrenal"],
+      "source": "explanation"
+    }
+  ],
+  "warnings": []
+}
