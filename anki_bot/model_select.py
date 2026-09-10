@@ -8,9 +8,27 @@ from pathlib import Path
 
 from PIL import Image, ImageFilter, ImageStat
 
-FLASH_MODEL = "gemini-2.5-flash"
-PRO_MODEL = "gemini-2.5-pro"
+# Current Gemini API model ids (March 2026).
+FLASH_MODEL = "gemini-3.5-flash"
+PRO_MODEL = "gemini-3.1-pro-preview"
 AUTO_MODEL = "auto"
+
+# Deprecated ids still seen in old .env files or docs.
+LEGACY_MODEL_ALIASES: dict[str, str] = {
+    "gemini-2.5-pro": PRO_MODEL,
+    "gemini-2.5-flash": FLASH_MODEL,
+    "gemini-2.0-flash": FLASH_MODEL,
+}
+
+
+def normalize_model(model: str) -> str:
+    """Map deprecated model ids to supported replacements."""
+    lowered = model.strip().lower()
+    if lowered in {"flash"}:
+        return FLASH_MODEL
+    if lowered in {"pro"}:
+        return PRO_MODEL
+    return LEGACY_MODEL_ALIASES.get(lowered, model.strip())
 
 
 @dataclass(frozen=True)
@@ -29,6 +47,10 @@ class ModelChoice:
     model: str
     reasons: tuple[str, ...]
     auto_selected: bool
+
+
+def _resolve_requested(requested: str | None) -> str:
+    return normalize_model(requested or os.getenv("GEMINI_MODEL") or AUTO_MODEL).lower()
 
 
 def _analyze_image(path: Path) -> ImageSignals:
@@ -76,7 +98,6 @@ def assess_images(image_paths: list[Path]) -> tuple[int, list[str]]:
     file_kb_threshold = float(os.getenv("ANKI_BOT_PRO_FILE_KB", "800"))
     edge_threshold = _threshold("ANKI_BOT_PRO_EDGE_SCORE", 28.0)
     color_threshold = _threshold("ANKI_BOT_PRO_COLOR_VARIANCE", 50.0)
-    score_threshold = int(os.getenv("ANKI_BOT_PRO_SCORE", "2"))
 
     for sig in signals:
         longest = max(sig.width, sig.height)
@@ -105,7 +126,6 @@ def assess_images(image_paths: list[Path]) -> tuple[int, list[str]]:
                 f"(color variance {sig.color_variance:.1f})"
             )
 
-    # Deduplicate reasons while preserving order
     seen: set[str] = set()
     unique_reasons: list[str] = []
     for reason in reasons:
@@ -116,21 +136,55 @@ def assess_images(image_paths: list[Path]) -> tuple[int, list[str]]:
     return score, unique_reasons
 
 
+def choose_model_for_lecture(
+    text_length: int,
+    html_paths: list[Path],
+    *,
+    requested: str | None = None,
+) -> ModelChoice:
+    """Pick Flash vs Pro for lecture HTML based on size and file count."""
+    env_model = _resolve_requested(requested)
+
+    if env_model == FLASH_MODEL:
+        return ModelChoice(model=FLASH_MODEL, reasons=(), auto_selected=False)
+    if env_model == PRO_MODEL:
+        return ModelChoice(model=PRO_MODEL, reasons=(), auto_selected=False)
+    if env_model not in {AUTO_MODEL, ""}:
+        return ModelChoice(model=normalize_model(env_model), reasons=(), auto_selected=False)
+
+    char_threshold = int(os.getenv("ANKI_BOT_LECTURE_PRO_CHARS", "12000"))
+    file_threshold = int(os.getenv("ANKI_BOT_LECTURE_PRO_FILES", "2"))
+    reasons: list[str] = []
+
+    if len(html_paths) >= file_threshold:
+        reasons.append(f"{len(html_paths)} HTML files")
+    if text_length >= char_threshold:
+        reasons.append(f"long lecture text ({text_length:,} chars)")
+
+    if reasons:
+        return ModelChoice(model=PRO_MODEL, reasons=tuple(reasons), auto_selected=True)
+
+    return ModelChoice(
+        model=FLASH_MODEL,
+        reasons=(f"lecture under {char_threshold:,} chars",),
+        auto_selected=True,
+    )
+
+
 def choose_model(
     image_paths: list[Path],
     *,
     requested: str | None = None,
 ) -> ModelChoice:
     """Resolve model: explicit override, env, or auto from image complexity."""
-    env_model = (requested or os.getenv("GEMINI_MODEL") or AUTO_MODEL).strip().lower()
+    env_model = _resolve_requested(requested)
 
-    if env_model in {FLASH_MODEL, "flash"}:
+    if env_model == FLASH_MODEL:
         return ModelChoice(model=FLASH_MODEL, reasons=(), auto_selected=False)
-    if env_model in {PRO_MODEL, "pro"}:
+    if env_model == PRO_MODEL:
         return ModelChoice(model=PRO_MODEL, reasons=(), auto_selected=False)
     if env_model not in {AUTO_MODEL, ""}:
-        # User supplied a full model id (e.g. gemini-2.5-flash-lite)
-        return ModelChoice(model=env_model, reasons=(), auto_selected=False)
+        return ModelChoice(model=normalize_model(env_model), reasons=(), auto_selected=False)
 
     score, reasons = assess_images(image_paths)
     score_threshold = int(os.getenv("ANKI_BOT_PRO_SCORE", "2"))

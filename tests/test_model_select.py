@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from anki_bot.model_select import FLASH_MODEL, PRO_MODEL, choose_model
+from anki_bot.model_select import FLASH_MODEL, PRO_MODEL, choose_model, normalize_model
 
 
 def _make_png(path: Path, size: tuple[int, int], *, chart: bool = False) -> None:
@@ -42,6 +42,11 @@ def test_auto_picks_pro_for_chart_like_image(tmp_path: Path) -> None:
     choice = choose_model([img], requested="auto")
     assert choice.model == PRO_MODEL
     assert any("chart" in r or "dense" in r or "large" in r or "high-res" in r for r in choice.reasons)
+
+
+def test_legacy_model_alias() -> None:
+    assert normalize_model("gemini-2.5-pro") == PRO_MODEL
+    assert normalize_model("gemini-2.5-flash") == FLASH_MODEL
 
 
 def test_force_flash_override(tmp_path: Path) -> None:

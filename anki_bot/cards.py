@@ -8,7 +8,7 @@ from anki_bot.models import ClozeCard, QuestionReview
 
 CLOZE_PATTERN = re.compile(r"\{\{c\d+::.+?\}\}", re.DOTALL)
 MAX_CARD_TEXT_LEN = 400
-MAX_CARDS_DEFAULT = 10
+MAX_CARDS_DEFAULT = 5
 
 
 class CardValidationError(ValueError):
@@ -37,11 +37,20 @@ def validate_card(card: ClozeCard) -> list[str]:
     return issues
 
 
+def resolve_card_cap(review: QuestionReview, max_cards: int | None = None) -> int:
+    if max_cards is not None:
+        return max_cards
+    if review.card_budget is not None:
+        return review.card_budget.hard_max
+    return MAX_CARDS_DEFAULT
+
+
 def filter_valid_cards(
     review: QuestionReview,
-    max_cards: int = MAX_CARDS_DEFAULT,
+    max_cards: int | None = None,
 ) -> QuestionReview:
     """Return a copy with invalid cards removed and warnings appended."""
+    cap = resolve_card_cap(review, max_cards)
     valid: list[ClozeCard] = []
     warnings = list(review.warnings)
 
@@ -51,9 +60,9 @@ def filter_valid_cards(
             warnings.append(f"Card {index + 1} rejected: {'; '.join(issues)}")
             continue
         valid.append(card)
-        if len(valid) >= max_cards:
-            if len(review.cards) > max_cards:
-                warnings.append(f"Truncated to {max_cards} cards (configurable cap)")
+        if len(valid) >= cap:
+            if len(review.cards) > cap:
+                warnings.append(f"Truncated to {cap} cards (budget cap)")
             break
 
     return review.model_copy(update={"cards": valid, "warnings": warnings})

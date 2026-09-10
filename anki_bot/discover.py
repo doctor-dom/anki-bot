@@ -1,36 +1,47 @@
-"""Discover and group screenshot files into question items."""
+"""Discover and group screenshot and lecture HTML files into content items."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from anki_bot.models import ContentKind
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
-_CONTAINER_FOLDER_NAMES = {"input", "output", "screenshots", "images", "data", "in"}
+HTML_EXTENSIONS = {".html", ".htm"}
+_CONTAINER_FOLDER_NAMES = {"input", "output", "screenshots", "images", "data", "in", "lectures"}
 
 
 @dataclass(frozen=True)
-class QuestionGroup:
+class ContentGroup:
     id: str
-    image_paths: tuple[Path, ...]
+    kind: ContentKind
+    image_paths: tuple[Path, ...] = ()
+    html_paths: tuple[Path, ...] = ()
+
+
+# Backward-compatible alias
+QuestionGroup = ContentGroup
 
 
 def _is_image(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
 
 
-def _sorted_images(paths: list[Path]) -> list[Path]:
+def _is_html(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in HTML_EXTENSIONS
+
+
+def _sorted_paths(paths: list[Path]) -> list[Path]:
     return sorted(paths, key=lambda p: p.name.lower())
 
 
 def _slug(text: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", text.strip().lower())
     cleaned = re.sub(r"-+", "-", cleaned).strip("-")
-    return cleaned or "question"
+    return cleaned or "item"
 
 
-# Legacy: item_1.png, item_2.png
 _LEGACY_PREFIX_PATTERN = re.compile(
     r"^(?P<prefix>.+?)[_\-.](?P<index>\d+)$",
     re.IGNORECASE,
@@ -38,14 +49,6 @@ _LEGACY_PREFIX_PATTERN = re.compile(
 
 
 def _numbered_topic_key(stem: str) -> str | None:
-    """Parse `<number>-<topic>-<part...>` filenames into a question id.
-
-    Examples:
-        12-endocrine-part1       -> 12-endocrine
-        12-endocrine-image-2     -> 12-endocrine
-        12-endocrine             -> 12-endocrine
-        Q12-adrenal-explanation  -> q12-adrenal
-    """
     parts = stem.split("-", 2)
     if len(parts) < 2:
         return None
@@ -66,136 +69,197 @@ def _legacy_prefix_key(stem: str) -> str | None:
     return None
 
 
-def discover_questions(root: Path) -> list[QuestionGroup]:
-    """Group screenshots into question items.
+def _lecture_id(base_id: str) -> str:
+    return base_id if base_id.endswith("-lecture") else f"{base_id}-lecture"
 
-    Rules (first match wins for loose files):
-    1. Filename pattern ``<number>-<topic>-<part>.png`` groups by ``<number>-<topic>``.
-    2. Legacy prefix ``name_1.png``, ``name_2.png``.
-    3. One subfolder = one question (all images inside that folder).
-    4. A folder of unparsed images with no subfolders = one question named after the folder.
-    """
+
+def discover_questions(root: Path) -> list[ContentGroup]:
+    """Discover question screenshots and lecture HTML files under *root*."""
+    return discover_content(root)
+
+
+def discover_content(root: Path) -> list[ContentGroup]:
     root = root.resolve()
     if not root.exists():
         raise FileNotFoundError(f"Path not found: {root}")
 
-    groups: list[QuestionGroup] = []
+    groups: list[ContentGroup] = []
 
     if root.is_file():
         if _is_image(root):
             key = _numbered_topic_key(root.stem) or _slug(root.stem)
-            groups.append(QuestionGroup(id=key, image_paths=(root,)))
+            groups.append(
+                ContentGroup(
+                    id=key,
+                    kind=ContentKind.QUESTION,
+                    image_paths=(root,),
+                )
+            )
+        elif _is_html(root):
+            key = _numbered_topic_key(root.stem) or _slug(root.stem)
+            groups.append(
+                ContentGroup(
+                    id=_lecture_id(key),
+                    kind=ContentKind.LECTURE,
+                    html_paths=(root,),
+                )
+            )
         return groups
 
     subdirs = [p for p in root.iterdir() if p.is_dir()]
     direct_images = [p for p in root.iterdir() if _is_image(p)]
+    direct_html = [p for p in root.iterdir() if _is_html(p)]
 
-    if direct_images and not subdirs:
-        return _group_loose_images(direct_images, folder_name=root.name)
+    if (direct_images or direct_html) and not subdirs:
+        groups.extend(_group_loose_files(direct_images, kind=ContentKind.QUESTION, folder_name=root.name))
+        groups.extend(_group_loose_files(direct_html, kind=ContentKind.LECTURE, folder_name=root.name))
+        return groups
 
-    folder_groups: list[QuestionGroup] = []
     for subdir in sorted(subdirs, key=lambda p: p.name.lower()):
-        images = _collect_images_in_dir(subdir)
+        images = _collect_files(subdir, _is_image)
+        html_files = _collect_files(subdir, _is_html)
         if images:
-            folder_groups.append(
-                QuestionGroup(
+            groups.append(
+                ContentGroup(
                     id=_slug(subdir.name),
-                    image_paths=tuple(_sorted_images(images)),
+                    kind=ContentKind.QUESTION,
+                    image_paths=tuple(_sorted_paths(images)),
                 )
             )
-
-    if folder_groups and not direct_images:
-        return folder_groups
-
-    if direct_images and not folder_groups:
-        return _group_loose_images(direct_images, folder_name=root.name)
-
-    if folder_groups:
-        groups.extend(folder_groups)
+        if html_files:
+            groups.append(
+                ContentGroup(
+                    id=_lecture_id(_slug(subdir.name)),
+                    kind=ContentKind.LECTURE,
+                    html_paths=tuple(_sorted_paths(html_files)),
+                )
+            )
 
     if direct_images:
-        groups.extend(_group_loose_images(direct_images, folder_name=root.name))
+        groups.extend(
+            _group_loose_files(direct_images, kind=ContentKind.QUESTION, folder_name=root.name)
+        )
+    if direct_html:
+        groups.extend(
+            _group_loose_files(direct_html, kind=ContentKind.LECTURE, folder_name=root.name)
+        )
 
     if not groups:
-        nested = _collect_images_recursive(root)
-        if nested:
-            if all(_numbered_topic_key(p.stem) for p in nested):
-                return _group_loose_images(nested, folder_name=root.name)
-            groups.append(
-                QuestionGroup(
-                    id=_slug(root.name),
-                    image_paths=tuple(_sorted_images(nested)),
+        nested_images = _collect_recursive(root, _is_image)
+        nested_html = _collect_recursive(root, _is_html)
+        if nested_images:
+            if all(_numbered_topic_key(p.stem) for p in nested_images):
+                groups.extend(
+                    _group_loose_files(nested_images, kind=ContentKind.QUESTION, folder_name=root.name)
                 )
-            )
+            else:
+                groups.append(
+                    ContentGroup(
+                        id=_slug(root.name),
+                        kind=ContentKind.QUESTION,
+                        image_paths=tuple(_sorted_paths(nested_images)),
+                    )
+                )
+        if nested_html:
+            if all(_numbered_topic_key(p.stem) for p in nested_html):
+                groups.extend(
+                    _group_loose_files(nested_html, kind=ContentKind.LECTURE, folder_name=root.name)
+                )
+            else:
+                groups.append(
+                    ContentGroup(
+                        id=_lecture_id(_slug(root.name)),
+                        kind=ContentKind.LECTURE,
+                        html_paths=tuple(_sorted_paths(nested_html)),
+                    )
+                )
 
     return groups
 
 
-def _collect_images_in_dir(directory: Path) -> list[Path]:
-    return [p for p in directory.iterdir() if _is_image(p)]
+def _collect_files(directory: Path, predicate) -> list[Path]:
+    return [p for p in directory.iterdir() if predicate(p)]
 
 
-def _collect_images_recursive(directory: Path) -> list[Path]:
-    found: list[Path] = []
-    for path in directory.rglob("*"):
-        if _is_image(path):
-            found.append(path)
-    return found
+def _collect_recursive(directory: Path, predicate) -> list[Path]:
+    return [path for path in directory.rglob("*") if predicate(path)]
 
 
-def _group_loose_images(images: list[Path], *, folder_name: str) -> list[QuestionGroup]:
+def _group_loose_files(
+    files: list[Path],
+    *,
+    kind: ContentKind,
+    folder_name: str,
+) -> list[ContentGroup]:
+    if not files:
+        return []
+
     by_numbered: dict[str, list[Path]] = {}
     by_legacy: dict[str, list[Path]] = {}
     singles: list[Path] = []
 
-    for image in images:
-        numbered = _numbered_topic_key(image.stem)
+    for path in files:
+        numbered = _numbered_topic_key(path.stem)
         if numbered:
-            by_numbered.setdefault(numbered, []).append(image)
+            by_numbered.setdefault(numbered, []).append(path)
             continue
-        legacy = _legacy_prefix_key(image.stem)
+        legacy = _legacy_prefix_key(path.stem)
         if legacy:
-            by_legacy.setdefault(legacy, []).append(image)
+            by_legacy.setdefault(legacy, []).append(path)
             continue
-        singles.append(image)
+        singles.append(path)
+
+    def _make_group(group_id: str, paths: list[Path]) -> ContentGroup:
+        final_id = _lecture_id(group_id) if kind == ContentKind.LECTURE else group_id
+        if kind == ContentKind.QUESTION:
+            return ContentGroup(
+                id=final_id,
+                kind=kind,
+                image_paths=tuple(_sorted_paths(paths)),
+            )
+        return ContentGroup(
+            id=final_id,
+            kind=kind,
+            html_paths=tuple(_sorted_paths(paths)),
+        )
 
     if by_numbered:
-        groups = [
-            QuestionGroup(id=key, image_paths=tuple(_sorted_images(paths)))
-            for key, paths in sorted(by_numbered.items())
-        ]
-        groups.extend(
-            QuestionGroup(id=key, image_paths=tuple(_sorted_images(paths)))
-            for key, paths in sorted(by_legacy.items())
-        )
-        groups.extend(
-            QuestionGroup(id=_slug(image.stem), image_paths=(image,))
-            for image in _sorted_images(singles)
-        )
+        groups = [_make_group(key, paths) for key, paths in sorted(by_numbered.items())]
+        groups.extend(_make_group(key, paths) for key, paths in sorted(by_legacy.items()))
+        groups.extend(_make_group(_slug(path.stem), [path]) for path in _sorted_paths(singles))
         return groups
 
     if by_legacy:
-        groups = [
-            QuestionGroup(id=key, image_paths=tuple(_sorted_images(paths)))
-            for key, paths in sorted(by_legacy.items())
-        ]
-        groups.extend(
-            QuestionGroup(id=_slug(image.stem), image_paths=(image,))
-            for image in _sorted_images(singles)
-        )
+        groups = [_make_group(key, paths) for key, paths in sorted(by_legacy.items())]
+        groups.extend(_make_group(_slug(path.stem), [path]) for path in _sorted_paths(singles))
         return groups
 
-    if len(images) > 1:
+    if len(files) > 1:
+        folder_id = _slug(folder_name)
+        final_id = _lecture_id(folder_id) if kind == ContentKind.LECTURE else folder_id
+        if kind == ContentKind.QUESTION:
+            return [
+                ContentGroup(
+                    id=final_id,
+                    kind=kind,
+                    image_paths=tuple(_sorted_paths(files)),
+                )
+            ]
         return [
-            QuestionGroup(
-                id=_slug(folder_name),
-                image_paths=tuple(_sorted_images(images)),
+            ContentGroup(
+                id=final_id,
+                kind=kind,
+                html_paths=tuple(_sorted_paths(files)),
             )
         ]
 
-    image = images[0]
+    path = files[0]
     folder_id = _slug(folder_name)
     if folder_id not in _CONTAINER_FOLDER_NAMES:
-        return [QuestionGroup(id=folder_id, image_paths=(image,))]
+        final_id = _lecture_id(folder_id) if kind == ContentKind.LECTURE else folder_id
+    else:
+        final_id = _lecture_id(_slug(path.stem)) if kind == ContentKind.LECTURE else _slug(path.stem)
 
-    return [QuestionGroup(id=_slug(image.stem), image_paths=(image,))]
+    if kind == ContentKind.QUESTION:
+        return [ContentGroup(id=final_id, kind=kind, image_paths=(path,))]
+    return [ContentGroup(id=final_id, kind=kind, html_paths=(path,))]

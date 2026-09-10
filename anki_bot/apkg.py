@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import random
 from pathlib import Path
 
 import genanki
 
-# Stable IDs so re-imports update the same note type/deck.
 MODEL_ID = 1607395104
-DECK_ID = 2059400110
 
 CARD_CSS = """
 .card {
@@ -35,6 +34,16 @@ CARD_CSS = """
 """
 
 
+def stable_id(name: str, *, minimum: int = 1 << 20) -> int:
+    """Derive a stable positive integer id from a string label."""
+    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()
+    return minimum + (int(digest[:8], 16) % (1 << 20))
+
+
+def deck_id_for_name(deck_name: str) -> int:
+    return stable_id(f"deck::{deck_name}")
+
+
 def cloze_model() -> genanki.Model:
     return genanki.Model(
         MODEL_ID,
@@ -56,7 +65,7 @@ def cloze_model() -> genanki.Model:
 
 
 def build_deck(reviews: list, deck_name: str = "HUB::anki-bot") -> genanki.Deck:
-    deck = genanki.Deck(DECK_ID, deck_name)
+    deck = genanki.Deck(deck_id_for_name(deck_name), deck_name)
     model = cloze_model()
 
     for review in reviews:

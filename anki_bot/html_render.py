@@ -5,7 +5,7 @@ from __future__ import annotations
 from html import escape
 from pathlib import Path
 
-from anki_bot.models import CATEGORY_CSS, Category, QuestionReview, topic_heading
+from anki_bot.models import CATEGORY_CSS, Category, ContentKind, QuestionReview, topic_heading
 
 LIST_CSS = """
 :root {
@@ -168,10 +168,14 @@ def render_item_preview(review: QuestionReview) -> str:
             )
         cards_html = f'<div class="preview-block"><h3>Proposed cloze cards</h3>{"".join(blocks)}</div>'
 
+    is_lecture = review.kind == ContentKind.LECTURE
+    label = "Lecture summary" if is_lecture else "Stem gist"
     stem = escape(review.item.stem_gist)
     clues = ", ".join(escape(c) for c in review.stem_clues)
+    clues_label = "Section topics" if is_lecture else "Stem clues"
+    pearl_label = "Main takeaway" if is_lecture else "Correct pearl"
     distractors = ""
-    if review.distractors:
+    if review.distractors and not is_lecture:
         rows = []
         for d in review.distractors:
             rows.append(
@@ -190,9 +194,10 @@ def render_item_preview(review: QuestionReview) -> str:
 <body>
   <h1>Review: {escape(review.id)}</h1>
   <p class="subtitle">Canonical edit surface: output/reviews/{escape(review.id)}.json</p>
-  <div class="preview-block"><h3>Stem gist</h3><p>{stem}</p></div>
-  {"<div class='preview-block'><h3>Stem clues</h3><p>" + clues + "</p></div>" if clues else ""}
-  {"<div class='preview-block'><h3>Correct pearl</h3><p>" + escape(review.correct_pearl) + "</p></div>" if review.correct_pearl else ""}
+  <div class="preview-block"><h3>{label}</h3><p>{stem}</p></div>
+  {"<div class='preview-block'><h3>" + clues_label + "</h3><p>" + clues + "</p></div>" if clues else ""}
+  {"<div class='preview-block'><h3>" + pearl_label + "</h3><p>" + escape(review.correct_pearl) + "</p></div>" if review.correct_pearl else ""}
+  {"<div class='preview-block'><h3>Source HTML</h3><ul>" + "".join(f"<li>{escape(p)}</li>" for p in review.source_html) + "</ul></div>" if review.source_html else ""}
   {distractors}
   {section}
   {cards_html}

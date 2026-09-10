@@ -1,0 +1,34 @@
+{
+  "item": {
+    "stem_gist": "Primary adrenal insufficiency: presentation, diagnosis, and replacement therapy.",
+    "choices": [],
+    "correct_letter": "",
+    "correct_text": "",
+    "confidence": 0.95
+  },
+  "stem_clues": ["autoimmune adrenal destruction", "diagnosis", "treatment"],
+  "correct_pearl": "Primary adrenal insufficiency requires both glucocorticoid and mineralocorticoid replacement.",
+  "distractors": [],
+  "high_yield": [
+    {"text": "Primary adrenal insufficiency", "category": "topic", "source": "lecture"},
+    {"text": "fatigue; hyperpigmentation; salt craving", "category": "neg", "source": "lecture"},
+    {"text": "low cortisol with elevated ACTH; ACTH stimulation test", "category": "dx", "source": "lecture"},
+    {"text": "glucocorticoid + mineralocorticoid replacement", "category": "tx", "source": "lecture"},
+    {"text": "unlike secondary adrenal insufficiency: mineralocorticoid replacement required", "category": "diff", "source": "lecture"}
+  ],
+  "cards": [
+    {
+      "text": "<span class=\"hy-topic\">{{c1::Primary adrenal insufficiency}}</span> in adults is most often caused by <span class=\"hy-neg\">autoimmune adrenal destruction</span>.",
+      "extra": "",
+      "tags": ["anki-bot::adrenal", "lecture"],
+      "source": "lecture"
+    },
+    {
+      "text": "<span class=\"hy-dx\">{{c1::Elevated ACTH}}</span> with low cortisol supports <span class=\"hy-topic\">primary adrenal insufficiency</span>.",
+      "extra": "<span class=\"hy-diff\">Unlike secondary disease, mineralocorticoid replacement is required.</span>",
+      "tags": ["anki-bot::adrenal", "lecture"],
+      "source": "lecture"
+    }
+  ],
+  "warnings": []
+}

@@ -48,7 +48,8 @@ Each high_yield row must include `source`: stem | choice | explanation | ui
   - `<span class="hy-diff">...</span>`
 - `extra` is a brief back-of-card note (NOT the high-yield cluster block).
 - Each card must have a `source` field.
-- Default 4–10 cards when enough material is shown; fewer if images are sparse.
+- Target **1–5 cards** when enough grounded material is shown; fewer is fine if the screenshot is sparse.
+- Prefer accuracy over coverage: never invent, never pad to hit the range.
 - Do not copy long stem paragraphs.
 
 ## Warnings

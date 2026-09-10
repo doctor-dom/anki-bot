@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 
@@ -14,6 +12,12 @@ class SourceType(str, Enum):
     CHOICE = "choice"
     EXPLANATION = "explanation"
     UI = "ui"
+    LECTURE = "lecture"
+
+
+class ContentKind(str, Enum):
+    QUESTION = "question"
+    LECTURE = "lecture"
 
 
 class Category(str, Enum):
@@ -67,10 +71,25 @@ class ClozeCard(BaseModel):
     source: SourceType
 
 
+class CardBudgetInfo(BaseModel):
+    soft_min: int
+    soft_max: int
+    hard_max: int
+    lecture_hours: float | None = None
+
+
+class UsageInfo(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_usd: float = 0.0
+    model: str = ""
+
+
 class QuestionReview(BaseModel):
-    """Canonical editable review document for one question."""
+    """Canonical editable review document for one question or lecture."""
 
     id: str
+    kind: ContentKind = ContentKind.QUESTION
     item: ItemInfo
     stem_clues: list[str] = Field(default_factory=list)
     correct_pearl: str = ""
@@ -79,7 +98,11 @@ class QuestionReview(BaseModel):
     cards: list[ClozeCard] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     source_images: list[str] = Field(default_factory=list)
+    source_html: list[str] = Field(default_factory=list)
     processed_at: str = ""
+    topic: str = ""
+    card_budget: CardBudgetInfo | None = None
+    usage: UsageInfo | None = None
 
 
 class GeminiReviewResponse(BaseModel):
@@ -101,10 +124,14 @@ def utc_now_iso() -> str:
 def review_from_gemini(
     question_id: str,
     response: GeminiReviewResponse,
-    source_images: list[str],
+    *,
+    kind: ContentKind = ContentKind.QUESTION,
+    source_images: list[str] | None = None,
+    source_html: list[str] | None = None,
 ) -> QuestionReview:
     return QuestionReview(
         id=question_id,
+        kind=kind,
         item=response.item,
         stem_clues=response.stem_clues,
         correct_pearl=response.correct_pearl,
@@ -112,7 +139,8 @@ def review_from_gemini(
         high_yield=response.high_yield,
         cards=response.cards,
         warnings=response.warnings,
-        source_images=source_images,
+        source_images=source_images or [],
+        source_html=source_html or [],
         processed_at=utc_now_iso(),
     )
 
