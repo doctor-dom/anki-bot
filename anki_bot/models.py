@@ -85,6 +85,12 @@ class UsageInfo(BaseModel):
     model: str = ""
 
 
+class SourceFileFingerprint(BaseModel):
+    path: str
+    size: int
+    mtime_ns: int
+
+
 class QuestionReview(BaseModel):
     """Canonical editable review document for one question or lecture."""
 
@@ -101,6 +107,8 @@ class QuestionReview(BaseModel):
     source_html: list[str] = Field(default_factory=list)
     processed_at: str = ""
     topic: str = ""
+    track: str = ""
+    source_fingerprint: list[SourceFileFingerprint] = Field(default_factory=list)
     card_budget: CardBudgetInfo | None = None
     usage: UsageInfo | None = None
 

@@ -149,9 +149,11 @@ def _attach_metadata(
     usage: UsageRecord | None,
     model_name: str,
     topic: str = "",
+    track: str = "",
 ) -> QuestionReview:
     updates: dict = {
         "topic": topic,
+        "track": track,
         "card_budget": CardBudgetInfo(
             soft_min=budget.soft_min,
             soft_max=budget.soft_max,
@@ -175,6 +177,7 @@ def review_images(
     *,
     model: str | None = None,
     budget: CardBudget | None = None,
+    track: str = "",
     client: genai.Client | None = None,
 ) -> QuestionReview:
     """Send screenshots to Gemini and return structured review."""
@@ -203,7 +206,13 @@ def review_images(
         kind=ContentKind.QUESTION,
         source_images=[str(p.resolve()) for p in image_paths],
     )
-    return _attach_metadata(review, budget=card_budget, usage=usage, model_name=model_name)
+    return _attach_metadata(
+        review,
+        budget=card_budget,
+        usage=usage,
+        model_name=model_name,
+        track=track,
+    )
 
 
 def review_lecture_html(
@@ -212,6 +221,7 @@ def review_lecture_html(
     *,
     model: str | None = None,
     budget: CardBudget | None = None,
+    track: str = "",
     client: genai.Client | None = None,
 ) -> QuestionReview:
     """Send lecture HTML to Gemini and return structured review."""
@@ -265,6 +275,7 @@ def review_lecture_html(
         usage=usage,
         model_name=model_name,
         topic=topic,
+        track=track,
     )
 
 
@@ -281,9 +292,17 @@ def review_content(
             list(group.html_paths),
             model=model,
             budget=budget,
+            track=group.track,
             client=client,
         )
-    return review_images(group.id, list(group.image_paths), model=model, budget=budget, client=client)
+    return review_images(
+        group.id,
+        list(group.image_paths),
+        model=model,
+        budget=budget,
+        track=group.track,
+        client=client,
+    )
 
 
 def review_from_fixture(
@@ -337,6 +356,7 @@ def review_from_fixture(
         usage=None,
         model_name=DEFAULT_MODEL,
         topic=topic,
+        track=group.track,
     )
 
 

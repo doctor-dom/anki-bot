@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -14,11 +15,19 @@ from anki_bot.discover import ContentGroup, discover_content
 from anki_bot.gemini_review import review_content, review_from_fixture
 from anki_bot.html_extract import combine_lecture_html
 from anki_bot.html_render import write_high_yield_html, write_item_preview
-from anki_bot.models import ContentKind, QuestionReview, UsageInfo
-from anki_bot.outputs import packs_for_reviews, reviews_for_pack
+from anki_bot.models import ContentKind, QuestionReview
+from anki_bot.outputs import PackKind, packs_for_reviews, reviews_for_pack
+from anki_bot.processed import attach_fingerprint, should_skip_group
 from anki_bot.usage import UsageRecord, format_run_total, format_usage_line
 
 load_dotenv()
+
+
+@dataclass(frozen=True)
+class RunLogEntry:
+    kind: str
+    group_id: str
+    source_summary: str
 
 
 def reviews_dir(output_root: Path) -> Path:
@@ -56,6 +65,27 @@ def _usage_record(review: QuestionReview) -> UsageRecord | None:
     )
 
 
+def _source_summary(group: ContentGroup) -> str:
+    paths = list(group.image_paths) + list(group.html_paths)
+    return ", ".join(p.name for p in paths) or group.id
+
+
+def _print_run_log(ran: list[RunLogEntry], ignored: list[RunLogEntry]) -> None:
+    print(f"Ran ({len(ran)}):")
+    if ran:
+        for entry in ran:
+            print(f"  {entry.kind:<8} {entry.group_id:<24} {entry.source_summary}")
+    else:
+        print("  (none)")
+
+    print(f"Ignored ({len(ignored)}, unchanged):")
+    if ignored:
+        for entry in ignored:
+            print(f"  {entry.kind:<8} {entry.group_id:<24} {entry.source_summary}")
+    else:
+        print("  (none)")
+
+
 def _compute_group_budget(
     group: ContentGroup,
     *,
@@ -91,6 +121,9 @@ def _process_group(
         review = review_content(group, model=model, budget=budget)
 
     review = filter_valid_cards(review, max_cards=max_cards)
+    review = attach_fingerprint(review, group)
+    if not review.track:
+        review = review.model_copy(update={"track": group.track})
 
     review_json = reviews_dir(output_root) / f"{group.id}.json"
     save_review(review, review_json)
@@ -106,14 +139,27 @@ def _process_group(
 
 
 def _write_output_packs(
-    reviews: list[QuestionReview],
+    all_reviews: list[QuestionReview],
     output_root: Path,
     *,
     review_only: bool,
+    this_run_reviews: list[QuestionReview] | None = None,
 ) -> list[Path]:
     written: list[Path] = []
-    for pack in packs_for_reviews(output_root, reviews):
-        pack_reviews = reviews_for_pack(reviews, pack)
+    this_run_ids = frozenset(r.id for r in (this_run_reviews or []))
+
+    for pack in packs_for_reviews(
+        output_root,
+        all_reviews,
+        this_run_reviews=this_run_reviews,
+    ):
+        pack_reviews = reviews_for_pack(
+            all_reviews,
+            pack,
+            this_run_ids=this_run_ids if pack.pack_kind == PackKind.QBANK_RUN else None,
+        )
+        if not pack_reviews and pack.pack_kind != PackKind.LECTURE:
+            continue
         write_high_yield_html(pack_reviews, pack.html_path)
         written.append(pack.html_path)
         if not review_only:
@@ -150,6 +196,7 @@ def process_path(
     max_cards: int | None = None,
     deck_name: str = "HUB::anki-bot",  # noqa: ARG001 - kept for CLI compatibility
     fixture: Path | None = None,
+    force: bool = False,
 ) -> list[QuestionReview]:
     """Process all question groups under input_path."""
     groups = discover_content(input_path)
@@ -159,8 +206,20 @@ def process_path(
             "(expected PNG/JPG screenshots or .html lecture files)"
         )
 
+    ran: list[RunLogEntry] = []
+    ignored: list[RunLogEntry] = []
     processed: list[QuestionReview] = []
+
     for group in groups:
+        review_path = reviews_dir(output_root) / f"{group.id}.json"
+        kind_label = group.kind.value
+        summary = _source_summary(group)
+
+        if should_skip_group(group, review_path, force=force) and fixture is None:
+            review = load_review(review_path)
+            ignored.append(RunLogEntry(kind_label, group.id, summary))
+            continue
+
         review = _process_group(
             group,
             output_root,
@@ -169,9 +228,17 @@ def process_path(
             fixture=fixture,
         )
         processed.append(review)
+        ran.append(RunLogEntry(kind_label, group.id, summary))
+
+    _print_run_log(ran, ignored)
 
     all_reviews = load_all_reviews(reviews_dir(output_root))
-    _write_output_packs(all_reviews, output_root, review_only=review_only)
+    _write_output_packs(
+        all_reviews,
+        output_root,
+        review_only=review_only,
+        this_run_reviews=processed,
+    )
     _print_run_summary(processed)
     return processed
 
@@ -194,8 +261,10 @@ def build_from_reviews(
         write_item_preview(review, reviews_path / f"{review.id}.html")
         all_reviews.append(review)
 
-    for pack in packs_for_reviews(output_root, all_reviews):
+    for pack in packs_for_reviews(output_root, all_reviews, this_run_reviews=None):
         pack_reviews = reviews_for_pack(all_reviews, pack)
+        if not pack_reviews and pack.pack_kind != PackKind.LECTURE:
+            continue
         write_high_yield_html(pack_reviews, pack.html_path)
         total_notes += write_apkg(pack_reviews, pack.apkg_path, deck_name=pack.deck_name)
 

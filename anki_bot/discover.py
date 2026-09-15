@@ -5,11 +5,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
 from anki_bot.models import ContentKind
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 HTML_EXTENSIONS = {".html", ".htm"}
 _CONTAINER_FOLDER_NAMES = {"input", "output", "screenshots", "images", "data", "in", "lectures"}
+_TRACK_NAMES = frozenset({"abp", "endo"})
 
 
 @dataclass(frozen=True)
@@ -18,10 +20,24 @@ class ContentGroup:
     kind: ContentKind
     image_paths: tuple[Path, ...] = ()
     html_paths: tuple[Path, ...] = ()
+    track: str = "misc"
 
 
 # Backward-compatible alias
 QuestionGroup = ContentGroup
+
+
+def track_from_paths(*paths: Path) -> str:
+    """Return abp, endo, or misc from path under input/<track>/..."""
+    for path in paths:
+        resolved = path.resolve()
+        parts = [p.lower() for p in resolved.parts]
+        for index, part in enumerate(parts):
+            if part == "input" and index + 1 < len(parts):
+                candidate = parts[index + 1]
+                if candidate in _TRACK_NAMES:
+                    return candidate
+    return "misc"
 
 
 def _is_image(path: Path) -> bool:
@@ -30,6 +46,13 @@ def _is_image(path: Path) -> bool:
 
 def _is_html(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in HTML_EXTENSIONS
+
+
+def _skip_under_input_output(path: Path) -> bool:
+    for parent in path.parents:
+        if parent.name.lower() == "output":
+            return True
+    return False
 
 
 def _sorted_paths(paths: list[Path]) -> list[Path]:
@@ -93,6 +116,7 @@ def discover_content(root: Path) -> list[ContentGroup]:
                     id=key,
                     kind=ContentKind.QUESTION,
                     image_paths=(root,),
+                    track=track_from_paths(root),
                 )
             )
         elif _is_html(root):
@@ -102,11 +126,16 @@ def discover_content(root: Path) -> list[ContentGroup]:
                     id=_lecture_id(key),
                     kind=ContentKind.LECTURE,
                     html_paths=(root,),
+                    track=track_from_paths(root),
                 )
             )
         return groups
 
-    subdirs = [p for p in root.iterdir() if p.is_dir()]
+    subdirs = [
+        p
+        for p in root.iterdir()
+        if p.is_dir() and p.name.lower() != "output"
+    ]
     direct_images = [p for p in root.iterdir() if _is_image(p)]
     direct_html = [p for p in root.iterdir() if _is_html(p)]
 
@@ -124,6 +153,7 @@ def discover_content(root: Path) -> list[ContentGroup]:
                     id=_slug(subdir.name),
                     kind=ContentKind.QUESTION,
                     image_paths=tuple(_sorted_paths(images)),
+                    track=track_from_paths(*images),
                 )
             )
         if html_files:
@@ -132,6 +162,7 @@ def discover_content(root: Path) -> list[ContentGroup]:
                     id=_lecture_id(_slug(subdir.name)),
                     kind=ContentKind.LECTURE,
                     html_paths=tuple(_sorted_paths(html_files)),
+                    track=track_from_paths(*html_files),
                 )
             )
 
@@ -158,6 +189,7 @@ def discover_content(root: Path) -> list[ContentGroup]:
                         id=_slug(root.name),
                         kind=ContentKind.QUESTION,
                         image_paths=tuple(_sorted_paths(nested_images)),
+                        track=track_from_paths(*nested_images),
                     )
                 )
         if nested_html:
@@ -171,6 +203,7 @@ def discover_content(root: Path) -> list[ContentGroup]:
                         id=_lecture_id(_slug(root.name)),
                         kind=ContentKind.LECTURE,
                         html_paths=tuple(_sorted_paths(nested_html)),
+                        track=track_from_paths(*nested_html),
                     )
                 )
 
@@ -182,7 +215,14 @@ def _collect_files(directory: Path, predicate) -> list[Path]:
 
 
 def _collect_recursive(directory: Path, predicate) -> list[Path]:
-    return [path for path in directory.rglob("*") if predicate(path)]
+    results: list[Path] = []
+    for path in directory.rglob("*"):
+        if not predicate(path):
+            continue
+        if _skip_under_input_output(path):
+            continue
+        results.append(path)
+    return results
 
 
 def _group_loose_files(
@@ -211,16 +251,20 @@ def _group_loose_files(
 
     def _make_group(group_id: str, paths: list[Path]) -> ContentGroup:
         final_id = _lecture_id(group_id) if kind == ContentKind.LECTURE else group_id
+        sorted_paths = _sorted_paths(paths)
+        track = track_from_paths(*sorted_paths)
         if kind == ContentKind.QUESTION:
             return ContentGroup(
                 id=final_id,
                 kind=kind,
-                image_paths=tuple(_sorted_paths(paths)),
+                image_paths=tuple(sorted_paths),
+                track=track,
             )
         return ContentGroup(
             id=final_id,
             kind=kind,
-            html_paths=tuple(_sorted_paths(paths)),
+            html_paths=tuple(sorted_paths),
+            track=track,
         )
 
     if by_numbered:
@@ -237,19 +281,23 @@ def _group_loose_files(
     if len(files) > 1:
         folder_id = _slug(folder_name)
         final_id = _lecture_id(folder_id) if kind == ContentKind.LECTURE else folder_id
+        sorted_paths = _sorted_paths(files)
+        track = track_from_paths(*sorted_paths)
         if kind == ContentKind.QUESTION:
             return [
                 ContentGroup(
                     id=final_id,
                     kind=kind,
-                    image_paths=tuple(_sorted_paths(files)),
+                    image_paths=tuple(sorted_paths),
+                    track=track,
                 )
             ]
         return [
             ContentGroup(
                 id=final_id,
                 kind=kind,
-                html_paths=tuple(_sorted_paths(files)),
+                html_paths=tuple(sorted_paths),
+                track=track,
             )
         ]
 
@@ -260,6 +308,7 @@ def _group_loose_files(
     else:
         final_id = _lecture_id(_slug(path.stem)) if kind == ContentKind.LECTURE else _slug(path.stem)
 
+    track = track_from_paths(path)
     if kind == ContentKind.QUESTION:
-        return [ContentGroup(id=final_id, kind=kind, image_paths=(path,))]
-    return [ContentGroup(id=final_id, kind=kind, html_paths=(path,))]
+        return [ContentGroup(id=final_id, kind=kind, image_paths=(path,), track=track)]
+    return [ContentGroup(id=final_id, kind=kind, html_paths=(path,), track=track)]
