@@ -1,0 +1,62 @@
+name: Nightly anki-bot run
+
+on:
+  schedule:
+    # 06:00 UTC ≈ 2:00 AM US Eastern (EDT)
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install anki-bot
+        run: pip install -e .
+
+      - name: Install rclone
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Configure rclone
+        env:
+          RCLONE_CONFIG: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '%s' "$RCLONE_CONFIG" > ~/.config/rclone/rclone.conf
+
+      - name: Pull input and output from Google Drive
+        env:
+          RCLONE_REMOTE: gdrive
+        run: |
+          mkdir -p input output
+          rclone copy "${RCLONE_REMOTE}:anki-bot/input" ./input --times
+          rclone copy "${RCLONE_REMOTE}:anki-bot/output" ./output || true
+
+      - name: Run anki-bot
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: auto
+          ANKI_BOT_PDF_MODE: auto
+        run: |
+          set -o pipefail
+          anki-bot run 2>&1 | tee run.log
+
+      - name: Push output to Google Drive
+        env:
+          RCLONE_REMOTE: gdrive
+        run: rclone copy ./output "${RCLONE_REMOTE}:anki-bot/output"
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## anki-bot nightly" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f run.log ]; then
+            tail -n 40 run.log >> "$GITHUB_STEP_SUMMARY"
+          fi

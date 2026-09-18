@@ -18,6 +18,13 @@ def test_question_budget() -> None:
     assert budget.hard_max == QUESTION_HARD
 
 
+def test_bulk_qbank_budget(monkeypatch) -> None:
+    monkeypatch.setenv("ANKI_BOT_BULK_QBANK", "1")
+    budget = budget_for_question()
+    assert budget.soft_max == 3
+    assert budget.hard_max == 3
+
+
 def test_short_lecture_budget() -> None:
     budget, warnings = budget_for_lecture(lecture_hours=0.5, char_count=5000)
     assert budget.soft_min == SHORT_LECTURE_SOFT[0]

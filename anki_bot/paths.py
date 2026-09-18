@@ -5,6 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 DEFAULT_OUTPUT_DIRNAME = "output"
+DEFAULT_INPUT_DIRNAME = "input"
+
+
+def resolve_default_input(cwd: Path | None = None) -> Path:
+    """Default input folder anchored to repo root when pyproject.toml is found."""
+    working = (cwd or Path.cwd()).resolve()
+    repo = find_repo_root(working)
+    if repo is not None:
+        return (repo / DEFAULT_INPUT_DIRNAME).resolve()
+    return (working / DEFAULT_INPUT_DIRNAME).resolve()
 
 
 def find_repo_root(*starts: Path) -> Path | None:

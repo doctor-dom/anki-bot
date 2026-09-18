@@ -86,9 +86,13 @@ class UsageInfo(BaseModel):
 
 
 class SourceFileFingerprint(BaseModel):
-    path: str
+    """Portable source identity: relpath + sha256; legacy path + mtime_ns still supported."""
+
     size: int
-    mtime_ns: int
+    relpath: str = ""
+    sha256: str = ""
+    path: str = ""
+    mtime_ns: int = 0
 
 
 class QuestionReview(BaseModel):
@@ -105,6 +109,7 @@ class QuestionReview(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     source_images: list[str] = Field(default_factory=list)
     source_html: list[str] = Field(default_factory=list)
+    source_pdfs: list[str] = Field(default_factory=list)
     processed_at: str = ""
     topic: str = ""
     track: str = ""
@@ -136,6 +141,7 @@ def review_from_gemini(
     kind: ContentKind = ContentKind.QUESTION,
     source_images: list[str] | None = None,
     source_html: list[str] | None = None,
+    source_pdfs: list[str] | None = None,
 ) -> QuestionReview:
     return QuestionReview(
         id=question_id,
@@ -149,6 +155,7 @@ def review_from_gemini(
         warnings=response.warnings,
         source_images=source_images or [],
         source_html=source_html or [],
+        source_pdfs=source_pdfs or [],
         processed_at=utc_now_iso(),
     )
 

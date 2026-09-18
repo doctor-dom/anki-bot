@@ -36,6 +36,10 @@ def _lecture_hour_chars() -> int:
     return int(os.getenv("ANKI_BOT_LECTURE_HOUR_CHARS", "18000"))
 
 
+def _bulk_qbank_enabled() -> bool:
+    return os.getenv("ANKI_BOT_BULK_QBANK", "").strip().lower() in {"1", "true", "yes"}
+
+
 def budget_for_question(*, max_cards_override: int | None = None) -> CardBudget:
     if max_cards_override is not None:
         return CardBudget(
@@ -43,6 +47,8 @@ def budget_for_question(*, max_cards_override: int | None = None) -> CardBudget:
             soft_max=min(QUESTION_SOFT[1], max_cards_override),
             hard_max=max_cards_override,
         )
+    if _bulk_qbank_enabled():
+        return CardBudget(soft_min=1, soft_max=3, hard_max=3)
     return CardBudget(
         soft_min=QUESTION_SOFT[0],
         soft_max=QUESTION_SOFT[1],

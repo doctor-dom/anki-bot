@@ -8,6 +8,18 @@ PRO_MODEL = "gemini-3.1-pro-preview"
 PRO_INPUT_USD_PER_M = 2.0
 PRO_OUTPUT_USD_PER_M = 12.0
 
+FLASH_MODEL = "gemini-3.5-flash"
+FLASH_INPUT_USD_PER_M = 0.30
+FLASH_OUTPUT_USD_PER_M = 2.50
+
+
+def rates_for_model(model: str) -> tuple[float, float]:
+    """Return (input_usd_per_m, output_usd_per_m) for cost estimates."""
+    normalized = model.lower()
+    if "flash" in normalized:
+        return FLASH_INPUT_USD_PER_M, FLASH_OUTPUT_USD_PER_M
+    return PRO_INPUT_USD_PER_M, PRO_OUTPUT_USD_PER_M
+
 
 @dataclass(frozen=True)
 class UsageRecord:
@@ -25,9 +37,9 @@ def estimate_usd(
     input_tokens: int,
     output_tokens: int,
     *,
-    input_rate: float = PRO_INPUT_USD_PER_M,
-    output_rate: float = PRO_OUTPUT_USD_PER_M,
+    model: str = PRO_MODEL,
 ) -> float:
+    input_rate, output_rate = rates_for_model(model)
     return (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
 
 
@@ -55,7 +67,7 @@ def usage_from_metadata(
     return UsageRecord(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
-        estimated_usd=estimate_usd(input_tokens, output_tokens),
+        estimated_usd=estimate_usd(input_tokens, output_tokens, model=model),
         model=model,
     )
 

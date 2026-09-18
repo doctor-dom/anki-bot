@@ -196,3 +196,38 @@ def choose_model(
         reasons=("simple screenshot set",) if not reasons else (f"score {score} < {score_threshold}",),
         auto_selected=True,
     )
+
+
+def choose_model_for_question(
+    *,
+    pdf_paths: list[Path],
+    image_paths: list[Path],
+    requested: str | None = None,
+) -> ModelChoice:
+    """Flash vs Pro for qbank PDFs and/or screenshots."""
+    env_model = _resolve_requested(requested)
+
+    if env_model == FLASH_MODEL:
+        return ModelChoice(model=FLASH_MODEL, reasons=(), auto_selected=False)
+    if env_model == PRO_MODEL:
+        return ModelChoice(model=PRO_MODEL, reasons=(), auto_selected=False)
+    if env_model not in {AUTO_MODEL, ""}:
+        return ModelChoice(model=normalize_model(env_model), reasons=(), auto_selected=False)
+
+    if image_paths:
+        return choose_model(image_paths, requested=AUTO_MODEL)
+
+    if len(pdf_paths) == 1:
+        return ModelChoice(
+            model=FLASH_MODEL,
+            reasons=(f"single PDF {pdf_paths[0].name}",),
+            auto_selected=True,
+        )
+    if len(pdf_paths) > 1:
+        return ModelChoice(
+            model=PRO_MODEL,
+            reasons=(f"{len(pdf_paths)} PDF files in one group",),
+            auto_selected=True,
+        )
+
+    return ModelChoice(model=FLASH_MODEL, reasons=("no media paths",), auto_selected=True)

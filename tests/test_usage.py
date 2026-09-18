@@ -1,10 +1,16 @@
-from anki_bot.usage import estimate_usd, format_usage_line, project_50h
+from anki_bot.usage import estimate_usd, format_usage_line, project_50h, FLASH_MODEL, PRO_MODEL
 from anki_bot.usage import UsageRecord
 
 
-def test_estimate_usd_calibration() -> None:
-    amount = estimate_usd(8200, 4100)
+def test_estimate_usd_calibration_pro() -> None:
+    amount = estimate_usd(8200, 4100, model=PRO_MODEL)
     assert abs(amount - 0.0656) < 0.001
+
+
+def test_estimate_usd_flash_cheaper() -> None:
+    flash = estimate_usd(8200, 4100, model=FLASH_MODEL)
+    pro = estimate_usd(8200, 4100, model=PRO_MODEL)
+    assert flash < pro
 
 
 def test_project_50h() -> None:

@@ -60,3 +60,43 @@ def test_legacy_prefix_grouping(tmp_path: Path) -> None:
     ids = {g.id for g in groups}
     assert "item" in ids
     assert "solo" in ids
+
+
+def test_qbank_pdf_filename_parsing(tmp_path: Path) -> None:
+    input_abp = tmp_path / "input" / "abp" / "abp-qbank-10"
+    input_abp.mkdir(parents=True)
+    pdf = input_abp / "10 - T1DM honeymoon.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    groups = discover_questions(tmp_path / "input")
+    assert len(groups) == 1
+    assert groups[0].id == "10-t1dm-honeymoon"
+    assert groups[0].track == "abp"
+    assert groups[0].pdf_paths == (pdf,)
+
+
+def test_qbank_pdf_batch_folder_is_ten_groups(tmp_path: Path) -> None:
+    batch = tmp_path / "input" / "abp" / "abp-qbank-10"
+    batch.mkdir(parents=True)
+    for n in range(1, 11):
+        (batch / f"{n} - topic {n}.pdf").write_bytes(b"pdf")
+    groups = discover_questions(tmp_path / "input")
+    assert len(groups) == 10
+    assert "abp-qbank-10" not in {g.id for g in groups}
+
+
+def test_recursive_input_finds_nested_pdfs(tmp_path: Path) -> None:
+    nested = tmp_path / "input" / "abp" / "batch" / "nested"
+    nested.mkdir(parents=True)
+    (nested / "3 - nested item.pdf").write_bytes(b"pdf")
+    groups = discover_questions(tmp_path / "input")
+    assert len(groups) == 1
+    assert groups[0].id == "3-nested-item"
+
+
+def test_qbank_pdf_hyphenated_topic(tmp_path: Path) -> None:
+    folder = tmp_path / "pdfs"
+    folder.mkdir()
+    (folder / "10 - type-1-dm.pdf").write_bytes(b"pdf")
+    groups = discover_questions(folder)
+    assert len(groups) == 1
+    assert groups[0].id == "10-type-1-dm"

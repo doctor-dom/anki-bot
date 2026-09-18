@@ -12,7 +12,7 @@ Turn board-style question screenshots **and lecture HTML files** into:
 
 
 
-Facts are extracted **only from what appears in your PNGs or lecture HTML**. Edit `output/reviews/*.json` to fix pearls, then rebuild.
+Facts are extracted **only from what appears in your PDF qbanks, PNGs, or lecture HTML**. Edit `output/reviews/*.json` to fix pearls, then rebuild.
 
 
 
@@ -176,9 +176,9 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 |--|--------------------------|-------------------------------|
 
-| **You provide** | `.html` / `.htm` (one file or grouped parts) | `.png` / `.jpg` / `.webp` (stem, choices, explanation pages) |
+| **You provide** | `.html` / `.htm` (one file or grouped parts) | `.pdf` (one file = one question) and/or `.png` / `.jpg` / `.webp` |
 
-| **Typical source** | Exported lecture notes | UWorld / NBME-style captures |
+| **Typical source** | Exported lecture notes | UWorld PDF exports or NBME-style screenshots |
 
 | **Command (from repo root)** | `anki-bot process input\<file-or-folder>` | Same |
 
@@ -214,13 +214,13 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 
 
-### Workflow B — Exam questions
+### Workflow B — Exam questions (PDF qbanks and/or PNGs)
 
 
 
-1. Put PNGs in `input/` with a shared prefix per question, or one subfolder per question — see [Input grouping](#input-grouping).
+1. Put **PDF qbanks** under `input/<track>/` (e.g. `input/abp/abp-qbank-10/`) using **`N - topic.pdf`** names (one PDF = one question), and/or put **PNGs** with a shared prefix per question — see [Input grouping](#input-grouping). Batch folders like `abp-qbank-10` are **not** question ids; ten PDFs in that folder become ten separate questions.
 
-2. VPN if needed → venv active → `anki-bot process input` (or a subfolder).
+2. VPN if needed → venv active → `anki-bot run` or `anki-bot process input` (or a subfolder). **`run`** is the daily “process everything new under `input/`” command (same flags as `process`).
 
 3. Per question: `output/reviews/<id>.json` and `output/reviews/<id>.html`.
 
@@ -274,6 +274,50 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 
 Default `-o output` is resolved to the **repository root** (directory containing `pyproject.toml`), not your current working directory, so running `anki-bot process .` from inside `input\abp\<id>` still writes to `<repo>\output`. Custom `-o myfolder` is still relative to the shell cwd.
+
+
+
+## Nightly cloud run (GitHub Actions + Google Drive)
+
+Drop new sources in **Google Drive** `anki-bot/input/` (mirror repo layout: `abp/…`, `endo/…`). A scheduled GitHub Actions workflow (`.github/workflows/nightly.yml`) runs about **2:00 AM US Eastern** (06:00 UTC): pull `input/` and `output/` from Drive, `anki-bot run`, push `output/` back. GitHub repo secrets: `GEMINI_API_KEY`, `RCLONE_CONFIG` (full `rclone.conf` from `rclone config` on your PC).
+
+**Skip across local and Drive:** fingerprints use file **hash + size** (not absolute paths). Skip checks **local** `output/reviews/<id>.json` **and** Drive `output/reviews/<id>.json`, and discovers **local** `input/` plus optional Drive input (see `.env.example`). Same content is not billed twice on PC vs cloud.
+
+Optional `.env` paths (Drive for Desktop mount or rclone remote):
+
+- `ANKI_BOT_DRIVE_INPUT` — folder path or `gdrive:anki-bot/input`
+- `ANKI_BOT_DRIVE_OUTPUT` — folder path or `gdrive:anki-bot/output`
+- `ANKI_BOT_RCLONE_REMOTE=gdrive`
+
+### What Drive has after 2AM
+
+The GitHub job writes the usual artifacts into Google Drive under `anki-bot/output/`:
+
+- `reviews/*.json` and `reviews/*.html`
+- `*-high-yield.html`
+- `ankideck/*.apkg` (the files you import)
+
+Those stay in the cloud until you copy them.
+
+### What rclone copy does on this PC
+
+From the repo root, with rclone remote `gdrive` already set up:
+
+```powershell
+rclone copy gdrive:anki-bot/output .\output
+```
+
+Or: `anki-bot pull` or `.\scripts\drive-sync.ps1 pull`.
+
+rclone downloads Drive’s `output` tree into the repo `output/` folder. **Copy** updates/adds files; it does **not** delete extra local files (that would be `sync`). After this, paths look exactly like a local `anki-bot run`.
+
+### Then Anki
+
+File → Import → `output\ankideck\qbank-abp.apkg` (or the lecture/run `.apkg` you want). Same import path as today; the files just arrived from Drive.
+
+If you use **Drive for Desktop**, you can skip rclone and open the mirrored `anki-bot\output\ankideck` folder instead.
+
+**Upload local review edits** before 2 AM: `anki-bot push-output` or `.\scripts\drive-sync.ps1 push-output`. Do not use `--force` on the scheduled workflow.
 
 
 
@@ -369,9 +413,27 @@ Drop files into `input/`, then from repo root:
 
 ```powershell
 
+anki-bot run
+
 anki-bot process input
 
 ```
+
+
+
+**Filename pattern (exam PDFs, UWorld-style):**
+
+
+
+```text
+
+<number> - <topic>.pdf
+
+```
+
+
+
+Example: `input/abp/abp-qbank-10/10 - T1DM honeymoon.pdf` → review id `10-t1dm-honeymoon`, track `abp`. If the same slug appears in another batch folder, ids are prefixed with that folder name so nothing is skipped by mistake.
 
 
 
@@ -449,7 +511,22 @@ anki-bot build-apkg output\reviews
 
 
 
-anki-bot **always uses `gemini-3.1-pro-preview`** for accuracy. Use `--model` only as an escape hatch (e.g. `gemini-3.5-flash`).
+Default **`GEMINI_MODEL=auto`**: anki-bot picks **Flash vs Pro per item** (simple single PDFs and light screenshot sets → Flash; dense multi-image items and long lectures → Pro). Override in `.env` or CLI:
+
+- `GEMINI_MODEL=gemini-3.5-flash` — cheapest bulk qbank runs (~1,500 questions).
+- `GEMINI_MODEL=gemini-3.1-pro-preview` — maximum accuracy, highest cost.
+
+PDFs use **local text extraction** when `ANKI_BOT_PDF_MODE=auto` (default) and the PDF looks like a full MCQ; otherwise the raw PDF is sent for vision OCR.
+
+Optional cost flags (see [`.env.example`](.env.example)): `ANKI_BOT_BULK_QBANK`, `ANKI_BOT_MAX_IMAGE_SIDE`, `ANKI_BOT_CACHE_PROMPTS`, `ANKI_BOT_ESCALATE_PRO`.
+
+### Bulk qbank cost playbook
+
+1. **Calibrate on 20 PDFs** — `anki-bot process input\abp\<batch> --review-only`, spot-check `output/reviews/*.json`, compare printed `$` per item.
+2. **Estimate before a big run** — `anki-bot estimate` or `anki-bot run --dry-run` (uses averages from existing review `usage` fields).
+3. **Run the corpus once** — `anki-bot run` with `GEMINI_MODEL=auto`, `ANKI_BOT_PDF_MODE=auto`; skipped unchanged items cost **$0**.
+4. **Re-run only failures** — `--force` on a subfolder, or `ANKI_BOT_ESCALATE_PRO=1` for automatic Pro vision retry when confidence is low.
+5. **Mass run, tighter cards** — `ANKI_BOT_BULK_QBANK=1` caps questions at **3** clozes and asks for compact JSON (lower output tokens).
 
 
 
@@ -517,7 +594,7 @@ See [Where outputs go](#where-outputs-go) and the [workflows table](#workflows--
 
 
 
-After each Gemini call, anki-bot prints token usage and estimated USD. End of run: totals and a **50-hour projection** from observed $/lecture-hour (Pro rates; Google invoice is source of truth).
+After each Gemini call, anki-bot prints token usage and estimated USD (Flash vs Pro rates by model used). End of run: totals and a **50-hour projection** from observed $/lecture-hour (Google invoice is source of truth).
 
 
 
