@@ -9,12 +9,48 @@ from pathlib import Path
 
 from anki_bot.models import ContentKind, QuestionReview
 
-TRACK_NAMES = frozenset({"abp", "endo", "misc"})
 ANKIDECK_DIRNAME = "ankideck"
+REVIEWS_DIRNAME = "reviews"
+# Top-level output folders that are not track roots (legacy flat layout).
+_OUTPUT_NON_TRACK_DIRNAMES = frozenset({ANKIDECK_DIRNAME, REVIEWS_DIRNAME})
 
 
-def ankideck_dir(output_root: Path) -> Path:
-    return output_root / ANKIDECK_DIRNAME
+def normalize_track(track: str) -> str:
+    lowered = (track or "misc").strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", lowered)
+    slug = slug.strip("-")
+    return slug or "misc"
+
+
+def track_output_root(output_root: Path, track: str) -> Path:
+    return output_root / normalize_track(track)
+
+
+def reviews_dir(output_root: Path, track: str) -> Path:
+    return track_output_root(output_root, track) / REVIEWS_DIRNAME
+
+
+def ankideck_dir(output_root: Path, track: str) -> Path:
+    return track_output_root(output_root, track) / ANKIDECK_DIRNAME
+
+
+def iter_review_json_paths(output_root: Path) -> list[Path]:
+    """All review JSON paths: track subfolders plus legacy flat output/reviews/."""
+    paths: list[Path] = []
+    legacy = output_root / REVIEWS_DIRNAME
+    if legacy.is_dir():
+        paths.extend(sorted(legacy.glob("*.json")))
+    if not output_root.is_dir():
+        return paths
+    for child in sorted(output_root.iterdir()):
+        if not child.is_dir():
+            continue
+        if child.name.lower() in _OUTPUT_NON_TRACK_DIRNAMES:
+            continue
+        reviews = child / REVIEWS_DIRNAME
+        if reviews.is_dir():
+            paths.extend(sorted(reviews.glob("*.json")))
+    return paths
 
 
 class PackKind(str, Enum):
@@ -49,11 +85,6 @@ def lecture_pack_label(review: QuestionReview) -> str:
     return topic_from_group_id(review.id)
 
 
-def normalize_track(track: str) -> str:
-    lowered = (track or "misc").strip().lower()
-    return lowered if lowered in TRACK_NAMES else "misc"
-
-
 @dataclass(frozen=True)
 class OutputPack:
     label: str
@@ -65,25 +96,28 @@ class OutputPack:
     run_count: int = 0
 
 
-def lecture_pack(output_root: Path, pack_id: str) -> OutputPack:
+def lecture_pack(output_root: Path, pack_id: str, *, track: str) -> OutputPack:
     label = slugify_label(pack_id)
+    track_root = track_output_root(output_root, track)
     return OutputPack(
         label=label,
         deck_name=f"HUB::{label}",
-        html_path=output_root / f"{label}-high-yield.html",
-        apkg_path=ankideck_dir(output_root) / f"{label}.apkg",
+        html_path=track_root / f"{label}-high-yield.html",
+        apkg_path=ankideck_dir(output_root, track) / f"{label}.apkg",
         pack_kind=PackKind.LECTURE,
+        track=normalize_track(track),
     )
 
 
 def qbank_run_pack(output_root: Path, track: str, question_count: int) -> OutputPack:
     track_slug = normalize_track(track)
     label = f"qbank-{track_slug}{question_count}"
+    track_root = track_output_root(output_root, track_slug)
     return OutputPack(
         label=label,
         deck_name=f"HUB::{label}",
-        html_path=output_root / f"{label}-high-yield.html",
-        apkg_path=ankideck_dir(output_root) / f"{label}.apkg",
+        html_path=track_root / f"{label}-high-yield.html",
+        apkg_path=ankideck_dir(output_root, track_slug) / f"{label}.apkg",
         pack_kind=PackKind.QBANK_RUN,
         track=track_slug,
         run_count=question_count,
@@ -93,11 +127,12 @@ def qbank_run_pack(output_root: Path, track: str, question_count: int) -> Output
 def qbank_compiled_pack(output_root: Path, track: str) -> OutputPack:
     track_slug = normalize_track(track)
     label = f"qbank-{track_slug}"
+    track_root = track_output_root(output_root, track_slug)
     return OutputPack(
         label=label,
         deck_name=f"HUB::{label}",
-        html_path=output_root / f"{label}-high-yield.html",
-        apkg_path=ankideck_dir(output_root) / f"{label}.apkg",
+        html_path=track_root / f"{label}-high-yield.html",
+        apkg_path=ankideck_dir(output_root, track_slug) / f"{label}.apkg",
         pack_kind=PackKind.QBANK_COMPILED,
         track=track_slug,
     )
@@ -115,9 +150,13 @@ def packs_for_reviews(
         if review.kind != ContentKind.LECTURE:
             continue
         label = lecture_pack_label(review)
-        if any(p.pack_kind == PackKind.LECTURE and p.label == label for p in packs):
+        track = normalize_track(review.track)
+        if any(
+            p.pack_kind == PackKind.LECTURE and p.label == label and p.track == track
+            for p in packs
+        ):
             continue
-        packs.append(lecture_pack(output_root, label))
+        packs.append(lecture_pack(output_root, label, track=track))
 
     question_reviews = [r for r in all_reviews if r.kind == ContentKind.QUESTION]
     tracks = sorted({normalize_track(r.track) for r in question_reviews})
@@ -143,18 +182,20 @@ def reviews_for_pack(
     *,
     this_run_ids: frozenset[str] | None = None,
 ) -> list[QuestionReview]:
+    pack_track = normalize_track(pack.track)
     if pack.pack_kind == PackKind.LECTURE:
         return [
             r
             for r in all_reviews
-            if r.kind == ContentKind.LECTURE and lecture_pack_label(r) == pack.label
+            if r.kind == ContentKind.LECTURE
+            and lecture_pack_label(r) == pack.label
+            and normalize_track(r.track) == pack_track
         ]
 
-    track = normalize_track(pack.track)
     questions = [
         r
         for r in all_reviews
-        if r.kind == ContentKind.QUESTION and normalize_track(r.track) == track
+        if r.kind == ContentKind.QUESTION and normalize_track(r.track) == pack_track
     ]
 
     if pack.pack_kind == PackKind.QBANK_COMPILED:

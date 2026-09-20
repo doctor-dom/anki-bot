@@ -8,11 +8,11 @@ Turn board-style question screenshots **and lecture HTML files** into:
 
 1. **Standalone color-coded high-yield HTML lists** — one per lecture topic or qbank run.
 
-2. **Anki cloze cards** in labeled `.apkg` files under `output/ankideck/` — one sentence per card, same five colors on terms.
+2. **Anki cloze cards** in labeled `.apkg` files under `output/<track>/ankideck/` — one sentence per card, same five colors on terms.
 
 
 
-Facts are extracted **only from what appears in your PDF qbanks, PNGs, or lecture HTML**. Edit `output/reviews/*.json` to fix pearls, then rebuild.
+Facts are extracted **only from what appears in your PDF qbanks, PNGs, or lecture HTML**. Edit `output/<track>/reviews/*.json` to fix pearls, then rebuild.
 
 
 
@@ -184,17 +184,17 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 | **Gemini role** | Lecture text → pearls + clozes (15–50 cards by duration) | OCR → stem, distractors, pearls + clozes (1–5 cards) |
 
-| **Review JSON** | `output/reviews/<id>.json` (e.g. `01-adrenal-lecture`) | `output/reviews/<id>.json` (e.g. `12-endocrine`) |
+| **Review JSON** | `output/<track>/reviews/<id>.json` | Same (e.g. `output/abp/reviews/12-endocrine.json`) |
 
-| **Color-coded preview** | `output/reviews/<id>.html` | `output/reviews/<id>.html` |
+| **Color-coded preview** | `output/<track>/reviews/<id>.html` | Same |
 
-| **Combined color-coded list** | `output/<short-id>-high-yield.html` | Run: `qbank-abp<N>-high-yield.html`; compiled: `qbank-abp-high-yield.html` |
+| **Combined color-coded list** | `output/<track>/<short-id>-high-yield.html` | Run: `qbank-abp<N>-high-yield.html`; compiled: `qbank-abp-high-yield.html` |
 
-| **Anki deck** | `output/ankideck/<short-id>.apkg` | Run: `ankideck/qbank-abp<N>.apkg`; **compiled:** `ankideck/qbank-abp.apkg` |
+| **Anki deck** | `output/<track>/ankideck/<short-id>.apkg` | Run: `qbank-abp<N>.apkg`; **compiled:** `qbank-abp.apkg` |
 
-| **Track** | From `input/abp/` or `input/endo/` path | Same |
+| **Track** | First folder under `input/` (e.g. `abp`, `endo`); files directly in `input/` → `misc` | Same |
 
-| **After editing JSON** | `anki-bot build-apkg output\reviews` | Same |
+| **After editing JSON** | `anki-bot build-apkg output` or `output\<track>\reviews` | Same |
 
 
 
@@ -208,9 +208,9 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 3. VPN if needed → venv active → `anki-bot process input\your-lecture.html`.
 
-4. Review `output/reviews/<id>.html`; edit `output/reviews/<id>.json` if needed.
+4. Review `output/<track>/reviews/<id>.html`; edit the matching `.json`.
 
-5. Import `output/ankideck/<short-id>.apkg` into Anki (e.g. `infectious-disease.apkg`); open the matching `-high-yield.html` in a browser.
+5. Import `output/<track>/ankideck/<short-id>.apkg` into Anki; open the matching `-high-yield.html` in that track folder.
 
 
 
@@ -222,11 +222,11 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 2. VPN if needed → venv active → `anki-bot run` or `anki-bot process input` (or a subfolder). **`run`** is the daily “process everything new under `input/`” command (same flags as `process`).
 
-3. Per question: `output/reviews/<id>.json` and `output/reviews/<id>.html`.
+3. Per question: `output/<track>/reviews/<id>.json` and `.html`.
 
-4. Run pack: `output/ankideck/qbank-abp<N>.apkg`. **Compiled (re-import this):** `output/ankideck/qbank-abp.apkg`.
+4. Run pack: `output/<track>/ankideck/qbank-abp<N>.apkg`. **Compiled (re-import this):** `output/<track>/ankideck/qbank-abp.apkg`.
 
-5. Edit JSON → `anki-bot build-apkg output\reviews`.
+5. Edit JSON → `anki-bot build-apkg output` or `output\<track>\reviews`.
 
 
 
@@ -258,18 +258,18 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 - **All generated files** go under `-o` / `--output` (default: `<repo>/output/`).
 
-- Typical layout:
+- Typical layout (mirror `input/<track>/…`):
 
-  - `output/reviews/<id>.json` — canonical edit surface
+  - `output/<track>/reviews/<id>.json` — canonical edit surface
 
-  - `output/reviews/<id>.html` — color-coded preview per item
+  - `output/<track>/reviews/<id>.html` — color-coded preview per item
 
-  - `output/<short-id>-high-yield.html`, `output/qbank-abp-high-yield.html`, `output/qbank-abp<N>-high-yield.html`
+  - `output/<track>/<short-id>-high-yield.html`, `output/<track>/qbank-abp-high-yield.html`, etc.
 
-  - `output/ankideck/*.apkg` — all Anki import files (lectures + qbank run + compiled)
-  - High-yield HTML stays in `output/` (not in `ankideck/`)
+  - `output/<track>/ankideck/*.apkg` — Anki import files (lectures + qbank run + compiled)
+  - High-yield HTML stays in each track folder (not in `ankideck/`)
 
-**Migrate nested outputs:** `python scripts/migrate_nested_outputs.py` (from old `input/**/output/` layouts).
+**Migrate old layouts:** `python scripts/migrate_nested_outputs.py` (`input/**/output/`); `python scripts/migrate_flat_output_by_track.py` (flat `output/reviews/`).
 
 
 
@@ -281,7 +281,7 @@ Default `-o output` is resolved to the **repository root** (directory containing
 
 Drop new sources in **Google Drive** `anki-bot/input/` (mirror repo layout: `abp/…`, `endo/…`). A scheduled GitHub Actions workflow (`.github/workflows/nightly.yml`) runs about **2:00 AM US Eastern** (06:00 UTC): pull `input/` and `output/` from Drive, `anki-bot run`, push `output/` back. GitHub repo secrets: `GEMINI_API_KEY`, `RCLONE_CONFIG` (full `rclone.conf` from `rclone config` on your PC).
 
-**Skip across local and Drive:** fingerprints use file **hash + size** (not absolute paths). Skip checks **local** `output/reviews/<id>.json` **and** Drive `output/reviews/<id>.json`, and discovers **local** `input/` plus optional Drive input (see `.env.example`). Same content is not billed twice on PC vs cloud.
+**Skip across local and Drive:** fingerprints use file **hash + size** (not absolute paths). Skip checks **local** `output/<track>/reviews/<id>.json` **and** Drive (track path first, then legacy flat `output/reviews/`), and discovers **local** `input/` plus optional Drive input (see `.env.example`). Same content is not billed twice on PC vs cloud.
 
 Optional `.env` paths (Drive for Desktop mount or rclone remote):
 
@@ -501,7 +501,7 @@ anki-bot process input --review-only
 
 anki-bot process input --max-cards 30
 
-anki-bot build-apkg output\reviews
+anki-bot build-apkg output
 
 ```
 
@@ -522,7 +522,7 @@ Optional cost flags (see [`.env.example`](.env.example)): `ANKI_BOT_BULK_QBANK`,
 
 ### Bulk qbank cost playbook
 
-1. **Calibrate on 20 PDFs** — `anki-bot process input\abp\<batch> --review-only`, spot-check `output/reviews/*.json`, compare printed `$` per item.
+1. **Calibrate on 20 PDFs** — `anki-bot process input\abp\<batch> --review-only`, spot-check `output\abp\reviews\*.json`, compare printed `$` per item.
 2. **Estimate before a big run** — `anki-bot estimate` or `anki-bot run --dry-run` (uses averages from existing review `usage` fields).
 3. **Run the corpus once** — `anki-bot run` with `GEMINI_MODEL=auto`, `ANKI_BOT_PDF_MODE=auto`; skipped unchanged items cost **$0**.
 4. **Re-run only failures** — `--force` on a subfolder, or `ANKI_BOT_ESCALATE_PRO=1` for automatic Pro vision retry when confidence is low.
@@ -584,9 +584,9 @@ See [Where outputs go](#where-outputs-go) and the [workflows table](#workflows--
 
 
 
-- `input/abp/infectious-disease/…` → `output/ankideck/infectious-disease.apkg`, `output/infectious-disease-high-yield.html`
+- `input/abp/infectious-disease/…` → `output/abp/ankideck/infectious-disease.apkg`, `output/abp/infectious-disease-high-yield.html`
 
-- 12 ABP question groups in one run → `output/ankideck/qbank-abp12.apkg` + `output/ankideck/qbank-abp.apkg`
+- 12 ABP question groups in one run → `output/abp/ankideck/qbank-abp12.apkg` + `output/abp/ankideck/qbank-abp.apkg`
 
 
 

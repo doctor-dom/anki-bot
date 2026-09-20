@@ -6,6 +6,7 @@ from html import escape
 from pathlib import Path
 
 from anki_bot.models import CATEGORY_CSS, Category, ContentKind, QuestionReview, topic_heading
+from anki_bot.outputs import normalize_track
 
 LIST_CSS = """
 :root {
@@ -142,7 +143,7 @@ def render_high_yield_page(reviews: list[QuestionReview], title: str = "High-Yie
 </head>
 <body>
   <h1>{escape(title)}</h1>
-  <p class="subtitle">Running color-coded pearls from anki-bot. Edit JSON in output/reviews/, then rebuild.</p>
+  <p class="subtitle">Running color-coded pearls from anki-bot. Edit JSON under output/&lt;track&gt;/reviews/, then rebuild.</p>
   <div class="legend">
     <span class="hy-topic">Topic</span>
     <span class="hy-neg">Signs / neg</span>
@@ -193,7 +194,7 @@ def render_item_preview(review: QuestionReview) -> str:
 </head>
 <body>
   <h1>Review: {escape(review.id)}</h1>
-  <p class="subtitle">Canonical edit surface: output/reviews/{escape(review.id)}.json</p>
+  <p class="subtitle">Canonical edit surface: output/{escape(normalize_track(review.track))}/reviews/{escape(review.id)}.json</p>
   <div class="preview-block"><h3>{label}</h3><p>{stem}</p></div>
   {"<div class='preview-block'><h3>" + clues_label + "</h3><p>" + clues + "</p></div>" if clues else ""}
   {"<div class='preview-block'><h3>" + pearl_label + "</h3><p>" + escape(review.correct_pearl) + "</p></div>" if review.correct_pearl else ""}

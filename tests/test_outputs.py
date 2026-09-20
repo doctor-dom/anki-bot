@@ -22,17 +22,17 @@ def test_topic_from_group_id() -> None:
 
 
 def test_labeled_pack_paths(tmp_path: Path) -> None:
-    pack = lecture_pack(tmp_path, "adrenal")
-    assert pack.apkg_path == tmp_path / "ankideck" / "adrenal.apkg"
-    assert pack.html_path == tmp_path / "adrenal-high-yield.html"
+    pack = lecture_pack(tmp_path, "adrenal", track="abp")
+    assert pack.apkg_path == tmp_path / "abp" / "ankideck" / "adrenal.apkg"
+    assert pack.html_path == tmp_path / "abp" / "adrenal-high-yield.html"
     assert pack.deck_name == "HUB::adrenal"
 
     qpack = qbank_run_pack(tmp_path, "abp", 12)
-    assert qpack.apkg_path == tmp_path / "ankideck" / "qbank-abp12.apkg"
-    assert qpack.html_path == tmp_path / "qbank-abp12-high-yield.html"
+    assert qpack.apkg_path == tmp_path / "abp" / "ankideck" / "qbank-abp12.apkg"
+    assert qpack.html_path == tmp_path / "abp" / "qbank-abp12-high-yield.html"
 
     compiled = qbank_compiled_pack(tmp_path, "abp")
-    assert compiled.apkg_path == tmp_path / "ankideck" / "qbank-abp.apkg"
+    assert compiled.apkg_path == tmp_path / "abp" / "ankideck" / "qbank-abp.apkg"
 
 
 def test_lecture_pack_label_short_id() -> None:

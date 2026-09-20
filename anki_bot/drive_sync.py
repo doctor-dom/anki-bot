@@ -11,6 +11,7 @@ from pathlib import Path
 
 from anki_bot.discover import ContentGroup, discover_content
 from anki_bot.models import QuestionReview
+from anki_bot.outputs import normalize_track
 
 
 def _env_path(key: str) -> Path | None:
@@ -189,19 +190,42 @@ def load_review_json(path: Path) -> QuestionReview | None:
         return None
 
 
-def fetch_drive_review(group_id: str) -> QuestionReview | None:
-    """Load review JSON from Drive output (mounted folder or rclone copyto)."""
+def _drive_review_local_paths(mounted: Path, group_id: str, track: str) -> list[Path]:
+    track_slug = normalize_track(track)
+    return [
+        mounted / track_slug / "reviews" / f"{group_id}.json",
+        mounted / "reviews" / f"{group_id}.json",
+    ]
+
+
+def _drive_review_remote_specs(spec: str, group_id: str, track: str) -> list[str]:
+    base = spec.rstrip("/")
+    track_slug = normalize_track(track)
+    return [
+        f"{base}/{track_slug}/reviews/{group_id}.json",
+        f"{base}/reviews/{group_id}.json",
+    ]
+
+
+def fetch_drive_review(group_id: str, *, track: str = "misc") -> QuestionReview | None:
+    """Load review JSON from Drive output (track folder first, then legacy flat)."""
     mounted = resolve_drive_output_dir()
     if mounted is not None:
-        return load_review_json(mounted / "reviews" / f"{group_id}.json")
+        for path in _drive_review_local_paths(mounted, group_id, track):
+            review = load_review_json(path)
+            if review is not None:
+                return review
+        return None
 
     spec = drive_output_rclone_spec()
     if not spec or not rclone_available():
         return None
 
-    remote = f"{spec.rstrip('/')}/reviews/{group_id}.json"
-    with tempfile.TemporaryDirectory(prefix="anki-bot-review-") as tmp:
-        dest = Path(tmp) / f"{group_id}.json"
-        if not rclone_copyto(remote, dest):
-            return None
-        return load_review_json(dest)
+    for remote in _drive_review_remote_specs(spec, group_id, track):
+        with tempfile.TemporaryDirectory(prefix="anki-bot-review-") as tmp:
+            dest = Path(tmp) / f"{group_id}.json"
+            if rclone_copyto(remote, dest):
+                review = load_review_json(dest)
+                if review is not None:
+                    return review
+    return None

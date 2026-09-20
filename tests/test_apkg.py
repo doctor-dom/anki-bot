@@ -1,10 +1,44 @@
+import warnings
 from pathlib import Path
 
-from anki_bot.apkg import write_apkg
+from anki_bot.apkg import escape_field_for_genanki, write_apkg
+from anki_bot.models import ClozeCard, ItemInfo, QuestionReview, SourceType
 from anki_bot.gemini_review import review_images_from_fixture
 from anki_bot.pipeline import build_from_reviews, process_path
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_review.json"
+
+
+def test_escape_field_preserves_spans() -> None:
+    raw = (
+        'Infants < 24 months need {{c1::<span class="hy-dx">UA culture</span>}} and risk < 1%.'
+    )
+    escaped = escape_field_for_genanki(raw)
+    assert "< 24" not in escaped
+    assert "&lt; 24" in escaped
+    assert '<span class="hy-dx">' in escaped
+    assert "</span>" in escaped
+    assert "&lt; 1%" in escaped
+
+
+def test_write_apkg_no_genanki_html_warnings(tmp_path: Path) -> None:
+    review = QuestionReview(
+        id="lt-test",
+        item=ItemInfo(stem_gist="x"),
+        cards=[
+            ClozeCard(
+                text='Age < 7; Tdap with {{c1::<span class="hy-tx">vaccine</span>}}.',
+                extra="Incidence < 1%.",
+                source=SourceType.EXPLANATION,
+            )
+        ],
+    )
+    apkg = tmp_path / "deck.apkg"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        count = write_apkg([review], apkg)
+    assert count == 1
+    assert apkg.exists()
 
 
 def test_write_apkg(tmp_path: Path) -> None:
@@ -30,10 +64,10 @@ def test_process_with_fixture(tmp_path: Path) -> None:
         fixture=FIXTURE,
     )
     assert len(reviews) == 1
-    assert (output / "qbank-misc1-high-yield.html").exists()
-    assert (output / "reviews" / "q1.json").exists()
-    assert (output / "ankideck" / "qbank-misc1.apkg").exists()
-    assert (output / "ankideck" / "qbank-misc.apkg").exists()
+    assert (output / "q1" / "qbank-q11-high-yield.html").exists()
+    assert (output / "q1" / "reviews" / "q1.json").exists()
+    assert (output / "q1" / "ankideck" / "qbank-q11.apkg").exists()
+    assert (output / "q1" / "ankideck" / "qbank-q1.apkg").exists()
 
 
 def test_two_questions_write_qbank_abp(tmp_path: Path) -> None:
@@ -45,8 +79,8 @@ def test_two_questions_write_qbank_abp(tmp_path: Path) -> None:
         )
     output = tmp_path / "output"
     process_path(tmp_path / "input" / "abp", output, review_only=False, fixture=FIXTURE)
-    assert (output / "ankideck" / "qbank-abp2.apkg").exists()
-    assert (output / "ankideck" / "qbank-abp.apkg").exists()
+    assert (output / "abp" / "ankideck" / "qbank-abp2.apkg").exists()
+    assert (output / "abp" / "ankideck" / "qbank-abp.apkg").exists()
 
 
 def test_build_from_reviews(tmp_path: Path) -> None:
@@ -55,6 +89,6 @@ def test_build_from_reviews(tmp_path: Path) -> None:
     (input_dir / "1.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     output = tmp_path / "output"
     process_path(input_dir, output, review_only=True, fixture=FIXTURE)
-    reviews, count = build_from_reviews(output / "reviews", output)
+    reviews, count = build_from_reviews(output / "q1" / "reviews", output)
     assert len(reviews) == 1
     assert count == 2

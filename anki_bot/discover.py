@@ -12,7 +12,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 HTML_EXTENSIONS = {".html", ".htm"}
 PDF_EXTENSIONS = {".pdf"}
 _CONTAINER_FOLDER_NAMES = {"input", "output", "screenshots", "images", "data", "in", "lectures"}
-_TRACK_NAMES = frozenset({"abp", "endo"})
+_NON_TRACK_SEGMENTS = _CONTAINER_FOLDER_NAMES | {"reviews", "ankideck"}
 
 _QBANK_PDF_PATTERN = re.compile(r"^(\d+)\s+-\s+(.+)$")
 
@@ -32,15 +32,17 @@ QuestionGroup = ContentGroup
 
 
 def track_from_paths(*paths: Path) -> str:
-    """Return abp, endo, or misc from path under input/<track>/..."""
+    """Return first folder under input/<track>/..., or misc for files directly under input/."""
     for path in paths:
         resolved = path.resolve()
         parts = [p.lower() for p in resolved.parts]
         for index, part in enumerate(parts):
-            if part == "input" and index + 1 < len(parts):
-                candidate = parts[index + 1]
-                if candidate in _TRACK_NAMES:
-                    return candidate
+            if part != "input" or index + 2 >= len(parts):
+                continue
+            candidate = parts[index + 1]
+            if candidate not in _NON_TRACK_SEGMENTS:
+                return candidate
+            return "misc"
     return "misc"
 
 

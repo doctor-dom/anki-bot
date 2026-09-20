@@ -150,7 +150,7 @@ def should_skip_group(
     if local is not None and _review_matches_group(local, group, input_roots=current_roots):
         return True
 
-    remote = fetch_drive_review(group.id)
+    remote = fetch_drive_review(group.id, track=group.track)
     if remote is not None and _review_matches_group(remote, group, input_roots=current_roots):
         return True
 

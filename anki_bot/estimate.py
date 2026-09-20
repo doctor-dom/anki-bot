@@ -9,6 +9,7 @@ from pathlib import Path
 from anki_bot.discover import ContentGroup
 from anki_bot.drive_sync import discover_with_drive
 from anki_bot.models import ContentKind, QuestionReview
+from anki_bot.outputs import iter_review_json_paths, reviews_dir
 from anki_bot.processed import should_skip_group
 from anki_bot.usage import estimate_usd, format_usd, rates_for_model
 from anki_bot.model_select import FLASH_MODEL, PRO_MODEL
@@ -23,14 +24,15 @@ class CostAverages:
     sample_count: int
 
 
-def _load_usage_averages(reviews_dir: Path, *, max_samples: int = 50) -> CostAverages | None:
-    if not reviews_dir.is_dir():
+def _load_usage_averages(output_root: Path, *, max_samples: int = 50) -> CostAverages | None:
+    paths = iter_review_json_paths(output_root)
+    if not paths:
         return None
 
     question_costs: list[tuple[float, str]] = []
     lecture_costs: list[tuple[float, str]] = []
 
-    for path in sorted(reviews_dir.glob("*.json"), reverse=True):
+    for path in reversed(paths):
         if len(question_costs) + len(lecture_costs) >= max_samples:
             break
         try:
@@ -96,13 +98,12 @@ def estimate_path(
     if not groups:
         raise FileNotFoundError(f"No supported inputs found under {input_path}")
 
-    reviews_dir = output_root / "reviews"
-    averages = _load_usage_averages(reviews_dir) or _fallback_averages()
+    averages = _load_usage_averages(output_root) or _fallback_averages()
 
     would_run: list[ContentGroup] = []
     would_skip: list[ContentGroup] = []
     for group in groups:
-        review_path = reviews_dir / f"{group.id}.json"
+        review_path = reviews_dir(output_root, group.track) / f"{group.id}.json"
         if should_skip_group(
             group,
             review_path,

@@ -20,7 +20,8 @@ from anki_bot.drive_sync import (
     rclone_copy,
 )
 from anki_bot.paths import find_repo_root
-from anki_bot.pipeline import build_from_reviews, process_path, reviews_dir
+from anki_bot.outputs import reviews_dir
+from anki_bot.pipeline import build_from_reviews, process_path
 
 
 def _default_output() -> Path:
@@ -67,7 +68,12 @@ def cmd_process(args: argparse.Namespace) -> int:
         return 1
 
     print(f"Processed {len(reviews)} item(s).")
-    print(f"Reviews: {reviews_dir(output_root)}")
+    if reviews:
+        tracks = sorted({r.track or "misc" for r in reviews})
+        for track in tracks:
+            print(f"Reviews ({track}): {reviews_dir(output_root, track)}")
+    else:
+        print(f"Reviews: {output_root}/<track>/reviews/")
     return 0
 
 
@@ -77,7 +83,9 @@ def cmd_build_apkg(args: argparse.Namespace) -> int:
     output_root = resolve_output_root(args.output, anchor_path=reviews_path)
     print(f"Output directory: {output_root}")
 
-    if not reviews_path.is_dir():
+    if reviews_path.resolve() == output_root.resolve():
+        pass
+    elif not reviews_path.is_dir():
         print(f"Error: reviews directory not found: {reviews_path}", file=sys.stderr)
         return 1
 
@@ -168,8 +176,8 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "reviews",
         nargs="?",
-        default="output/reviews",
-        help="Path to reviews folder (default: output/reviews)",
+        default="output",
+        help="Reviews folder, track reviews dir, or output root (default: output)",
     )
     build.add_argument(
         "-o",

@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import random
+import re
 from pathlib import Path
 
 import genanki
+
+# Allowed inline HTML from anki-bot cloze cards (hy-* spans only).
+_ALLOWED_TAG_RE = re.compile(
+    r"</span>|<span\s+class=\"hy-(?:topic|neg|dx|tx|diff)\"\s*>",
+    re.IGNORECASE,
+)
 
 MODEL_ID = 1607395104
 
@@ -44,6 +51,41 @@ def deck_id_for_name(deck_name: str) -> int:
     return stable_id(f"deck::{deck_name}")
 
 
+def _escape_literal_lt(text: str) -> str:
+    """Escape raw ``<`` as ``&lt;`` without double-escaping existing entities."""
+    out: list[str] = []
+    index = 0
+    while index < len(text):
+        if text.startswith("&lt;", index):
+            out.append("&lt;")
+            index += 4
+            continue
+        if text[index] == "<":
+            out.append("&lt;")
+            index += 1
+            continue
+        out.append(text[index])
+        index += 1
+    return "".join(out)
+
+
+def escape_field_for_genanki(field: str) -> str:
+    """
+    Escape medical ``<`` (e.g. ``< 24 months``) for genanki while keeping hy-* spans.
+    """
+    if not field:
+        return field
+
+    parts: list[str] = []
+    last = 0
+    for match in _ALLOWED_TAG_RE.finditer(field):
+        parts.append(_escape_literal_lt(field[last : match.start()]))
+        parts.append(match.group(0))
+        last = match.end()
+    parts.append(_escape_literal_lt(field[last:]))
+    return "".join(parts)
+
+
 def cloze_model() -> genanki.Model:
     return genanki.Model(
         MODEL_ID,
@@ -72,7 +114,10 @@ def build_deck(reviews: list, deck_name: str = "HUB::anki-bot") -> genanki.Deck:
         for card in review.cards:
             note = genanki.Note(
                 model=model,
-                fields=[card.text, card.extra or ""],
+                fields=[
+                    escape_field_for_genanki(card.text),
+                    escape_field_for_genanki(card.extra or ""),
+                ],
                 tags=card.tags or [f"anki-bot::{review.id}"],
             )
             deck.add_note(note)

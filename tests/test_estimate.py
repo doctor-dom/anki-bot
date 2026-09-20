@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from anki_bot.models import ContentKind, ItemInfo, QuestionReview, UsageInfo
-from anki_bot.pipeline import save_review, reviews_dir
+from anki_bot.outputs import reviews_dir
+from anki_bot.pipeline import save_review
 from anki_bot.estimate import estimate_path
 
 
@@ -29,7 +30,7 @@ def test_estimate_skips_unchanged(tmp_path: Path) -> None:
         source_pdfs=[str(pdf.resolve())],
     )
     review = attach_fingerprint(review, group)
-    save_review(review, reviews_dir(output) / f"{group.id}.json")
+    save_review(review, reviews_dir(output, "abp") / f"{group.id}.json")
 
     report = estimate_path(input_dir, output)
     assert len(report.would_skip) == 1

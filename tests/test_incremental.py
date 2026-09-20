@@ -9,8 +9,8 @@ HTML_FIXTURE = Path(__file__).parent / "fixtures" / "sample_lecture.html"
 
 
 def test_skip_unchanged_lecture(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
+    input_dir = tmp_path / "input" / "abp"
+    input_dir.mkdir(parents=True)
     html = input_dir / "01-adrenal-lecture.html"
     html.write_bytes(HTML_FIXTURE.read_bytes())
     output = tmp_path / "output"

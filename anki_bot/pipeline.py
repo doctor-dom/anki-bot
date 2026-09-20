@@ -17,7 +17,13 @@ from anki_bot.gemini_review import review_content, review_from_fixture
 from anki_bot.html_extract import combine_lecture_html
 from anki_bot.html_render import write_high_yield_html, write_item_preview
 from anki_bot.models import ContentKind, QuestionReview
-from anki_bot.outputs import PackKind, packs_for_reviews, reviews_for_pack
+from anki_bot.outputs import (
+    PackKind,
+    iter_review_json_paths,
+    packs_for_reviews,
+    reviews_dir,
+    reviews_for_pack,
+)
 from anki_bot.processed import attach_fingerprint, should_skip_group
 from anki_bot.usage import UsageRecord, format_run_total, format_usage_line
 
@@ -29,10 +35,6 @@ class RunLogEntry:
     kind: str
     group_id: str
     source_summary: str
-
-
-def reviews_dir(output_root: Path) -> Path:
-    return output_root / "reviews"
 
 
 def load_review(path: Path) -> QuestionReview:
@@ -48,11 +50,16 @@ def save_review(review: QuestionReview, path: Path) -> None:
     )
 
 
-def load_all_reviews(reviews_path: Path) -> list[QuestionReview]:
-    if not reviews_path.exists():
-        return []
-    files = sorted(reviews_path.glob("*.json"))
-    return [load_review(f) for f in files]
+def load_all_reviews(output_root: Path) -> list[QuestionReview]:
+    return [load_review(f) for f in iter_review_json_paths(output_root)]
+
+
+def _review_json_paths_for_build(reviews_path: Path, output_root: Path) -> list[Path]:
+    if reviews_path.resolve() == output_root.resolve():
+        return iter_review_json_paths(output_root)
+    if reviews_path.is_dir():
+        return sorted(reviews_path.glob("*.json"))
+    return []
 
 
 def _usage_record(review: QuestionReview) -> UsageRecord | None:
@@ -127,9 +134,10 @@ def _process_group(
     if not review.track:
         review = review.model_copy(update={"track": group.track})
 
-    review_json = reviews_dir(output_root) / f"{group.id}.json"
+    track_dir = reviews_dir(output_root, group.track)
+    review_json = track_dir / f"{group.id}.json"
     save_review(review, review_json)
-    write_item_preview(review, reviews_dir(output_root) / f"{group.id}.html")
+    write_item_preview(review, track_dir / f"{group.id}.html")
 
     usage = _usage_record(review)
     if usage is not None:
@@ -215,7 +223,7 @@ def process_path(
     processed: list[QuestionReview] = []
 
     for group in groups:
-        review_path = reviews_dir(output_root) / f"{group.id}.json"
+        review_path = reviews_dir(output_root, group.track) / f"{group.id}.json"
         kind_label = group.kind.value
         summary = _source_summary(group)
 
@@ -244,7 +252,7 @@ def process_path(
 
     _print_run_log(ran, ignored)
 
-    all_reviews = load_all_reviews(reviews_dir(output_root))
+    all_reviews = load_all_reviews(output_root)
     _write_output_packs(
         all_reviews,
         output_root,
@@ -266,11 +274,11 @@ def build_from_reviews(
     all_reviews: list[QuestionReview] = []
     total_notes = 0
 
-    for path in sorted(reviews_path.glob("*.json")):
+    for path in _review_json_paths_for_build(reviews_path, output_root):
         review = load_review(path)
         review = filter_valid_cards(review, max_cards=max_cards)
         save_review(review, path)
-        write_item_preview(review, reviews_path / f"{review.id}.html")
+        write_item_preview(review, path.with_suffix(".html"))
         all_reviews.append(review)
 
     for pack in packs_for_reviews(output_root, all_reviews, this_run_reviews=None):
