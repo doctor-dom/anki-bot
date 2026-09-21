@@ -16,7 +16,8 @@ from pydantic import ValidationError
 
 from anki_bot.card_budget import CardBudget
 from anki_bot.discover import ContentGroup
-from anki_bot.html_extract import combine_lecture_html
+from anki_bot.html_extract import collect_lecture_image_paths, combine_lecture_html
+from anki_bot.image_ocr import PngPrepareResult, prepare_png_question_input, path_is_figure
 from anki_bot.model_select import (
     AUTO_MODEL,
     FLASH_MODEL,
@@ -88,44 +89,41 @@ def _cache_prompts_enabled() -> bool:
     return os.getenv("ANKI_BOT_CACHE_PROMPTS", "").strip().lower() in {"1", "true", "yes"}
 
 
-def _mime_type(path: Path) -> str:
-    ext = path.suffix.lower()
-    return {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-        ".gif": "image/gif",
-        ".bmp": "image/bmp",
-    }.get(ext, "image/png")
+def _max_image_side() -> int | None:
+    raw = os.getenv("ANKI_BOT_MAX_IMAGE_SIDE", "1600").strip().lower()
+    if raw in {"", "0", "off", "none", "false"}:
+        return None
+    return int(raw)
 
 
-def _maybe_downscale_image(path: Path) -> tuple[bytes, str]:
-    mime = _mime_type(path)
-    raw_max = os.getenv("ANKI_BOT_MAX_IMAGE_SIDE", "").strip()
-    if not raw_max:
-        return path.read_bytes(), mime
-
-    max_side = int(raw_max)
+def _vision_image_bytes(path: Path) -> bytes:
+    max_side = _max_image_side()
     with Image.open(path) as img:
-        width, height = img.size
-        longest = max(width, height)
-        if longest <= max_side:
-            return path.read_bytes(), mime
-
-        scale = max_side / longest
-        new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
-        resized = img.convert("RGB").resize(new_size, Image.Resampling.LANCZOS)
+        rgb = img.convert("RGB")
+        if max_side is not None:
+            width, height = rgb.size
+            longest = max(width, height)
+            if longest > max_side:
+                scale = max_side / longest
+                new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+                rgb = rgb.resize(new_size, Image.Resampling.LANCZOS)
         buffer = io.BytesIO()
-        fmt = "PNG" if path.suffix.lower() == ".png" else "JPEG"
-        resized.save(buffer, format=fmt, quality=85)
-        out_mime = "image/png" if fmt == "PNG" else "image/jpeg"
-        return buffer.getvalue(), out_mime
+        rgb.save(buffer, format="JPEG", quality=85)
+        return buffer.getvalue()
 
 
-def _image_part(path: Path) -> types.Part:
-    data, mime = _maybe_downscale_image(path)
-    return types.Part.from_bytes(data=data, mime_type=mime)
+def _image_part(path: Path, *, figure: bool = False) -> types.Part:
+    data = _vision_image_bytes(path)
+    resolution = (
+        types.MediaResolution.MEDIA_RESOLUTION_HIGH
+        if figure or path_is_figure(path)
+        else types.MediaResolution.MEDIA_RESOLUTION_MEDIUM
+    )
+    return types.Part.from_bytes(
+        data=data,
+        mime_type="image/jpeg",
+        media_resolution=resolution,
+    )
 
 
 def _pdf_part(path: Path) -> types.Part:
@@ -219,6 +217,13 @@ def _get_cached_content_name(
         return None
 
 
+def _question_thinking_config() -> types.ThinkingConfig | None:
+    try:
+        return types.ThinkingConfig(thinking_level="low")
+    except (TypeError, ValueError):
+        return None
+
+
 def _call_gemini(
     client: genai.Client,
     model_name: str,
@@ -226,6 +231,7 @@ def _call_gemini(
     static_parts: list[str],
     dynamic_parts: list[types.Part | str],
     cache_kind: str,
+    low_thinking: bool = False,
 ) -> tuple[GeminiReviewResponse, UsageRecord | None]:
     schema = GeminiReviewResponse.model_json_schema()
     model_name = normalize_model(model_name)
@@ -245,6 +251,10 @@ def _call_gemini(
     )
     if cached_name:
         config.cached_content = cached_name
+    if low_thinking:
+        thinking = _question_thinking_config()
+        if thinking is not None:
+            config.thinking_config = thinking
 
     try:
         response = client.models.generate_content(
@@ -285,6 +295,7 @@ def _attach_metadata(
     model_name: str,
     topic: str = "",
     track: str = "",
+    input_method: str = "",
 ) -> QuestionReview:
     updates: dict = {
         "topic": topic,
@@ -302,8 +313,22 @@ def _attach_metadata(
             output_tokens=usage.output_tokens,
             estimated_usd=usage.estimated_usd,
             model=usage.model or model_name,
+            thought_tokens=usage.thought_tokens,
+            input_method=input_method,
         )
     return review.model_copy(update=updates)
+
+
+def _input_method_label(png_result: PngPrepareResult | None, image_count: int) -> str:
+    if png_result is None or image_count == 0:
+        return ""
+    if png_result.text and not png_result.vision_paths:
+        return "OCR text"
+    if png_result.text and png_result.vision_paths:
+        return f"OCR + {len(png_result.vision_paths)} vision PNG"
+    if png_result.used_vision:
+        return f"vision PNG ({image_count} file(s))"
+    return ""
 
 
 def _should_escalate_to_pro(parsed: GeminiReviewResponse) -> bool:
@@ -323,11 +348,24 @@ def _pick_question_model(
     pdf_paths: list[Path],
     image_paths: list[Path],
     model: str | None,
+    png_result: PngPrepareResult | None = None,
 ) -> ModelChoice:
     raw = _resolve_requested(model)
     if not _is_auto_model(raw):
         return ModelChoice(model=normalize_model(raw), reasons=(), auto_selected=False)
-    return choose_model_for_question(pdf_paths=pdf_paths, image_paths=image_paths, requested=AUTO_MODEL)
+    ocr_text_only = bool(
+        png_result
+        and png_result.text.strip()
+        and not png_result.vision_paths
+    )
+    vision_paths = list(png_result.vision_paths) if png_result else list(image_paths)
+    return choose_model_for_question(
+        pdf_paths=pdf_paths,
+        image_paths=image_paths,
+        requested=AUTO_MODEL,
+        ocr_text_only=ocr_text_only,
+        vision_image_paths=vision_paths,
+    )
 
 
 def _pick_lecture_model(
@@ -350,7 +388,8 @@ def _run_question_gemini(
     pdfs: list[Path],
     images: list[Path],
     force_vision: bool = False,
-) -> tuple[GeminiReviewResponse, UsageRecord | None, list[str]]:
+    png_result: PngPrepareResult | None = None,
+) -> tuple[GeminiReviewResponse, UsageRecord | None, list[str], PngPrepareResult | None]:
     extra_warnings: list[str] = []
     dynamic: list[types.Part | str] = [
         "\n\nAnalyze this board-style question. Return JSON matching the schema exactly.",
@@ -371,8 +410,17 @@ def _run_question_gemini(
         for path in pdfs:
             dynamic.append(_pdf_part(path))
 
-    for path in images:
-        dynamic.append(_image_part(path))
+    if images:
+        if png_result is None or force_vision:
+            png_result = prepare_png_question_input(images, force_vision=force_vision)
+        extra_warnings.extend(png_result.warnings)
+        if png_result.text.strip() and not force_vision:
+            dynamic.append(
+                f"\n\n--- QUESTION TEXT (extracted from PNG OCR) ---\n{png_result.text}\n--- END QUESTION TEXT ---"
+            )
+        vision_paths = list(png_result.vision_paths) if not force_vision else images
+        for path in vision_paths:
+            dynamic.append(_image_part(path))
 
     parsed, usage = _call_gemini(
         client,
@@ -380,8 +428,9 @@ def _run_question_gemini(
         static_parts=_question_static_parts(card_budget),
         dynamic_parts=dynamic,
         cache_kind="question",
+        low_thinking=True,
     )
-    return parsed, usage, extra_warnings
+    return parsed, usage, extra_warnings, png_result
 
 
 def review_question(
@@ -403,22 +452,36 @@ def review_question(
     from anki_bot.card_budget import budget_for_question
 
     client = client or get_client()
-    choice = _pick_question_model(pdf_paths=pdfs, image_paths=images, model=model)
-    _print_model_choice(choice)
-    model_name = choice.model
     card_budget = budget or budget_for_question()
 
-    parsed, usage, extra_warnings = _run_question_gemini(
+    png_result: PngPrepareResult | None = None
+    if images:
+        png_result = prepare_png_question_input(images)
+
+    choice = _pick_question_model(
+        pdf_paths=pdfs,
+        image_paths=images,
+        model=model,
+        png_result=png_result,
+    )
+    _print_model_choice(choice)
+    model_name = choice.model
+    input_method = _input_method_label(png_result, len(images))
+    if input_method:
+        print(f"Input method: {input_method}")
+
+    parsed, usage, extra_warnings, png_result = _run_question_gemini(
         client,
         model_name=model_name,
         card_budget=card_budget,
         pdfs=pdfs,
         images=images,
+        png_result=png_result,
     )
 
     if _should_escalate_to_pro(parsed) and model_name != PRO_MODEL:
         print(f"Escalating {question_id} to {PRO_MODEL} (low confidence or missing explanation)")
-        parsed, usage, escalate_warnings = _run_question_gemini(
+        parsed, usage, escalate_warnings, png_result = _run_question_gemini(
             client,
             model_name=PRO_MODEL,
             card_budget=card_budget,
@@ -428,6 +491,7 @@ def review_question(
         )
         extra_warnings.extend(escalate_warnings)
         model_name = PRO_MODEL
+        input_method = _input_method_label(png_result, len(images)) or "vision PNG (escalated)"
 
     review = review_from_gemini(
         question_id,
@@ -443,6 +507,7 @@ def review_question(
         usage=usage,
         model_name=model_name,
         track=track,
+        input_method=input_method,
     )
 
 
@@ -525,6 +590,7 @@ def review_lecture_html(
         lecture_id,
         parsed,
         kind=ContentKind.LECTURE,
+        source_images=collect_lecture_image_paths(html_paths),
         source_html=[str(p.resolve()) for p in html_paths],
     )
     review.warnings.extend(extract_warnings)

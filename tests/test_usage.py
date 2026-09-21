@@ -1,5 +1,14 @@
-from anki_bot.usage import estimate_usd, format_usage_line, project_50h, FLASH_MODEL, PRO_MODEL
-from anki_bot.usage import UsageRecord
+from anki_bot.usage import (
+    FLASH_LITE_MODEL,
+    FLASH_MODEL,
+    PRO_MODEL,
+    UsageRecord,
+    estimate_usd,
+    format_usage_line,
+    project_50h,
+    rates_for_model,
+    usage_from_metadata,
+)
 
 
 def test_estimate_usd_calibration_pro() -> None:
@@ -24,3 +33,28 @@ def test_format_usage_line_with_hours() -> None:
     assert "8,200 in" in line
     assert "4,100 out" in line
     assert "/hr" in line
+
+
+def test_flash_lite_rates_distinct_from_flash() -> None:
+    lite_in, lite_out = rates_for_model(FLASH_LITE_MODEL)
+    flash_in, flash_out = rates_for_model(FLASH_MODEL)
+    assert lite_in < flash_in
+    assert lite_out < flash_out
+
+
+def test_usage_includes_thought_tokens() -> None:
+    class Meta:
+        prompt_token_count = 1000
+        candidates_token_count = 500
+        thoughts_token_count = 200
+
+    record = usage_from_metadata(Meta(), model=FLASH_LITE_MODEL)
+    assert record is not None
+    assert record.output_tokens == 700
+    assert record.thought_tokens == 200
+
+
+def test_format_usage_line_input_note() -> None:
+    usage = UsageRecord(input_tokens=100, output_tokens=50, estimated_usd=0.001, model=FLASH_LITE_MODEL)
+    line = format_usage_line("q1", usage, input_note="OCR text")
+    assert "OCR text" in line

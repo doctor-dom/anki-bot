@@ -9,13 +9,19 @@ PRO_INPUT_USD_PER_M = 2.0
 PRO_OUTPUT_USD_PER_M = 12.0
 
 FLASH_MODEL = "gemini-3.5-flash"
-FLASH_INPUT_USD_PER_M = 0.30
-FLASH_OUTPUT_USD_PER_M = 2.50
+FLASH_INPUT_USD_PER_M = 1.50
+FLASH_OUTPUT_USD_PER_M = 9.00
+
+FLASH_LITE_MODEL = "gemini-3.5-flash-lite"
+FLASH_LITE_INPUT_USD_PER_M = 0.30
+FLASH_LITE_OUTPUT_USD_PER_M = 2.50
 
 
 def rates_for_model(model: str) -> tuple[float, float]:
     """Return (input_usd_per_m, output_usd_per_m) for cost estimates."""
     normalized = model.lower()
+    if "flash-lite" in normalized or normalized.endswith("-lite"):
+        return FLASH_LITE_INPUT_USD_PER_M, FLASH_LITE_OUTPUT_USD_PER_M
     if "flash" in normalized:
         return FLASH_INPUT_USD_PER_M, FLASH_OUTPUT_USD_PER_M
     return PRO_INPUT_USD_PER_M, PRO_OUTPUT_USD_PER_M
@@ -27,6 +33,7 @@ class UsageRecord:
     output_tokens: int
     estimated_usd: float
     model: str = PRO_MODEL
+    thought_tokens: int = 0
 
     @property
     def total_tokens(self) -> int:
@@ -56,11 +63,13 @@ def usage_from_metadata(
         or getattr(usage_metadata, "input_token_count", 0)
         or 0
     )
-    output_tokens = int(
+    thought_tokens = int(getattr(usage_metadata, "thoughts_token_count", 0) or 0)
+    candidate_tokens = int(
         getattr(usage_metadata, "candidates_token_count", 0)
         or getattr(usage_metadata, "output_token_count", 0)
         or 0
     )
+    output_tokens = candidate_tokens + thought_tokens
     if input_tokens == 0 and output_tokens == 0:
         return None
 
@@ -69,6 +78,7 @@ def usage_from_metadata(
         output_tokens=output_tokens,
         estimated_usd=estimate_usd(input_tokens, output_tokens, model=model),
         model=model,
+        thought_tokens=thought_tokens,
     )
 
 
@@ -83,11 +93,17 @@ def format_usage_line(
     usage: UsageRecord,
     *,
     lecture_hours: float | None = None,
+    input_note: str = "",
 ) -> str:
+    thought_part = ""
+    if usage.thought_tokens > 0:
+        thought_part = f" ({usage.thought_tokens:,} thinking)"
     base = (
         f"[{label}] Gemini usage: {usage.input_tokens:,} in + "
-        f"{usage.output_tokens:,} out (~{format_usd(usage.estimated_usd)})"
+        f"{usage.output_tokens:,} out{thought_part} (~{format_usd(usage.estimated_usd)})"
     )
+    if input_note:
+        base = f"{base} · {input_note}"
     if lecture_hours and lecture_hours > 0:
         per_hour = usage.estimated_usd / lecture_hours
         return f"{base} · {lecture_hours:.1f} hr · {format_usd(per_hour)}/hr"

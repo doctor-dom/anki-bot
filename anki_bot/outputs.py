@@ -55,6 +55,7 @@ def iter_review_json_paths(output_root: Path) -> list[Path]:
 
 class PackKind(str, Enum):
     LECTURE = "lecture"
+    LECTURE_COMPILED = "lecture_compiled"
     QBANK_COMPILED = "qbank_compiled"
     QBANK_RUN = "qbank_run"
 
@@ -124,6 +125,52 @@ def qbank_run_pack(output_root: Path, track: str, question_count: int) -> Output
     )
 
 
+def parse_numbered_topic_from_id(review_id: str) -> tuple[int | None, str | None]:
+    """Parse ``12-endocrine`` / ``10-t1dm-honeymoon`` style ids."""
+    base = review_id
+    if base.endswith("-lecture"):
+        base = base[: -len("-lecture")]
+    parts = base.split("-", 2)
+    if len(parts) >= 2 and parts[0].isdigit():
+        return int(parts[0]), parts[1]
+    return None, None
+
+
+def qbank_sort_key(review: QuestionReview) -> tuple[str, int, str]:
+    number, parsed_topic = parse_numbered_topic_from_id(review.id)
+    topic = slugify_label(review.topic) if review.topic else (parsed_topic or "")
+    topic_key = topic.lower() if topic else "zzz-other"
+    return (topic_key, number if number is not None else 999999, review.id.lower())
+
+
+def topic_heading_for_sort_key(topic_key: str) -> str:
+    if topic_key == "zzz-other":
+        return "Other"
+    return topic_key.replace("-", " ").title()
+
+
+def sort_qbank_reviews(reviews: list[QuestionReview]) -> list[QuestionReview]:
+    return sorted(reviews, key=qbank_sort_key)
+
+
+def sort_lecture_reviews(reviews: list[QuestionReview]) -> list[QuestionReview]:
+    return sorted(reviews, key=lambda r: (lecture_pack_label(r), r.id.lower()))
+
+
+def lecture_compiled_pack(output_root: Path, track: str) -> OutputPack:
+    track_slug = normalize_track(track)
+    label = f"lectures-{track_slug}"
+    track_root = track_output_root(output_root, track_slug)
+    return OutputPack(
+        label=label,
+        deck_name=f"HUB::{label}",
+        html_path=track_root / f"{label}-high-yield.html",
+        apkg_path=ankideck_dir(output_root, track_slug) / f"{label}.apkg",
+        pack_kind=PackKind.LECTURE_COMPILED,
+        track=track_slug,
+    )
+
+
 def qbank_compiled_pack(output_root: Path, track: str) -> OutputPack:
     track_slug = normalize_track(track)
     label = f"qbank-{track_slug}"
@@ -163,6 +210,12 @@ def packs_for_reviews(
     for track in tracks:
         packs.append(qbank_compiled_pack(output_root, track))
 
+    lecture_tracks = sorted(
+        {normalize_track(r.track) for r in all_reviews if r.kind == ContentKind.LECTURE}
+    )
+    for track in lecture_tracks:
+        packs.append(lecture_compiled_pack(output_root, track))
+
     if this_run_reviews:
         run_questions = [r for r in this_run_reviews if r.kind == ContentKind.QUESTION]
         by_track: dict[str, list[QuestionReview]] = {}
@@ -192,6 +245,14 @@ def reviews_for_pack(
             and normalize_track(r.track) == pack_track
         ]
 
+    if pack.pack_kind == PackKind.LECTURE_COMPILED:
+        lectures = [
+            r
+            for r in all_reviews
+            if r.kind == ContentKind.LECTURE and normalize_track(r.track) == pack_track
+        ]
+        return sort_lecture_reviews(lectures)
+
     questions = [
         r
         for r in all_reviews
@@ -199,8 +260,8 @@ def reviews_for_pack(
     ]
 
     if pack.pack_kind == PackKind.QBANK_COMPILED:
-        return questions
+        return sort_qbank_reviews(questions)
 
     if this_run_ids is None:
-        return questions
-    return [r for r in questions if r.id in this_run_ids]
+        return sort_qbank_reviews(questions)
+    return sort_qbank_reviews([r for r in questions if r.id in this_run_ids])

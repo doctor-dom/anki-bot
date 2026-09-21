@@ -1,12 +1,18 @@
 import warnings
 from pathlib import Path
 
-from anki_bot.apkg import escape_field_for_genanki, write_apkg
-from anki_bot.models import ClozeCard, ItemInfo, QuestionReview, SourceType
+from anki_bot.apkg import build_deck, escape_field_for_genanki, write_apkg
+from anki_bot.models import ClozeCard, ContentKind, ItemInfo, QuestionReview, SourceType
 from anki_bot.gemini_review import review_images_from_fixture
 from anki_bot.pipeline import build_from_reviews, process_path
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_review.json"
+
+
+def test_escape_field_preserves_img_tags() -> None:
+    raw = 'Pearl <img src="12-endocrine-0.png">'
+    escaped = escape_field_for_genanki(raw)
+    assert '<img src="12-endocrine-0.png">' in escaped
 
 
 def test_escape_field_preserves_spans() -> None:
@@ -39,6 +45,31 @@ def test_write_apkg_no_genanki_html_warnings(tmp_path: Path) -> None:
         count = write_apkg([review], apkg)
     assert count == 1
     assert apkg.exists()
+
+
+def test_write_apkg_stem_extra_images(tmp_path: Path) -> None:
+    img = tmp_path / "1.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+    review = QuestionReview(
+        id="q-stem-img",
+        kind=ContentKind.QUESTION,
+        item=ItemInfo(stem_gist="x"),
+        source_images=[str(img)],
+        cards=[
+            ClozeCard(text="{{c1::A}}", extra="", source=SourceType.EXPLANATION),
+            ClozeCard(text="{{c1::B}}", extra="note", source=SourceType.STEM),
+        ],
+    )
+    deck, media = build_deck([review])
+    assert media == [str(img.resolve())]
+    assert len(deck.notes) == 2
+    assert '<img src="q-stem-img-0.png">' in deck.notes[1].fields[1]
+    assert "img" not in deck.notes[0].fields[1]
+
+    apkg = tmp_path / "deck.apkg"
+    count = write_apkg([review], apkg)
+    assert count == 2
+    assert apkg.stat().st_size > 200
 
 
 def test_write_apkg(tmp_path: Path) -> None:

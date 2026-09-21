@@ -2,8 +2,11 @@ from pathlib import Path
 
 from anki_bot.models import ContentKind, ItemInfo, QuestionReview
 from anki_bot.outputs import (
+    PackKind,
+    lecture_compiled_pack,
     lecture_pack,
     lecture_pack_label,
+    packs_for_reviews,
     qbank_compiled_pack,
     qbank_run_pack,
     slugify_label,
@@ -47,3 +50,21 @@ def test_lecture_pack_label_short_id() -> None:
 def test_qbank_run_label() -> None:
     pack = qbank_run_pack(Path("output"), "endo", 2)
     assert pack.label == "qbank-endo2"
+
+
+def test_lecture_compiled_pack_path(tmp_path: Path) -> None:
+    pack = lecture_compiled_pack(tmp_path, "abp")
+    assert pack.pack_kind == PackKind.LECTURE_COMPILED
+    assert pack.html_path == tmp_path / "abp" / "lectures-abp-high-yield.html"
+
+
+def test_packs_include_lecture_compiled(tmp_path: Path) -> None:
+    review = QuestionReview(
+        id="01-adrenal-lecture",
+        kind=ContentKind.LECTURE,
+        track="abp",
+        item=ItemInfo(stem_gist="x"),
+    )
+    packs = packs_for_reviews(tmp_path, [review])
+    kinds = {p.pack_kind for p in packs}
+    assert PackKind.LECTURE_COMPILED in kinds

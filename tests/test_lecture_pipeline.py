@@ -33,6 +33,8 @@ def test_process_lecture_with_fixture(tmp_path: Path) -> None:
     assert reviews[0].kind == ContentKind.LECTURE
     assert (output / "misc" / "reviews" / "01-adrenal-lecture.json").exists()
     assert (output / "misc" / "adrenal-high-yield.html").exists()
+    assert (output / "misc" / "adrenal-illustrated.html").exists()
+    assert (output / "misc" / "lectures-misc-high-yield.html").exists()
     assert (output / "misc" / "ankideck" / "adrenal.apkg").exists()
     assert not (output / "misc" / "ankideck" / "01-adrenal-lecture.apkg").exists()
     assert reviews[0].card_budget is not None

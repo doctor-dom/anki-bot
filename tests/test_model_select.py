@@ -2,7 +2,14 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from anki_bot.model_select import FLASH_MODEL, PRO_MODEL, choose_model, normalize_model
+from anki_bot.model_select import (
+    FLASH_LITE_MODEL,
+    FLASH_MODEL,
+    PRO_MODEL,
+    choose_model,
+    choose_model_for_question,
+    normalize_model,
+)
 
 
 def _make_png(path: Path, size: tuple[int, int], *, chart: bool = False) -> None:
@@ -25,15 +32,28 @@ def test_auto_picks_flash_for_simple_image(tmp_path: Path) -> None:
     assert choice.auto_selected
 
 
-def test_auto_picks_pro_for_many_images(tmp_path: Path) -> None:
+def test_auto_picks_flash_for_many_text_screenshots(tmp_path: Path) -> None:
     paths = []
     for i in range(3):
         p = tmp_path / f"page_{i}.png"
         _make_png(p, (900, 700))
         paths.append(p)
     choice = choose_model(paths, requested="auto")
-    assert choice.model == PRO_MODEL
+    assert choice.model == FLASH_MODEL
     assert choice.auto_selected
+
+
+def test_auto_picks_flash_lite_for_ocr_only(tmp_path: Path) -> None:
+    img = tmp_path / "q1.png"
+    _make_png(img, (900, 700))
+    choice = choose_model_for_question(
+        pdf_paths=[],
+        image_paths=[img],
+        requested="auto",
+        ocr_text_only=True,
+        vision_image_paths=[],
+    )
+    assert choice.model == FLASH_LITE_MODEL
 
 
 def test_auto_picks_pro_for_chart_like_image(tmp_path: Path) -> None:

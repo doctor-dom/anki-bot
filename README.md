@@ -188,7 +188,9 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 | **Color-coded preview** | `output/<track>/reviews/<id>.html` | Same |
 
-| **Combined color-coded list** | `output/<track>/<short-id>-high-yield.html` | Run: `qbank-abp<N>-high-yield.html`; compiled: `qbank-abp-high-yield.html` |
+| **Combined color-coded list** | `output/<track>/<short-id>-high-yield.html` (pearl-only); **`output/<track>/<short-id>-illustrated.html`** (pearls + slide `<img>`) | Run: `qbank-abp<N>-high-yield.html`; compiled: `qbank-abp-high-yield.html` (figures + topic groups) |
+| **All lectures in track** | **`output/<track>/lectures-<track>-high-yield.html`** (pearls + images) | — |
+| **Shared media** | `output/<track>/media/` (copied PNGs/JPGs; referenced from HTML and Anki) | Same |
 
 | **Anki deck** | `output/<track>/ankideck/<short-id>.apkg` | Run: `qbank-abp<N>.apkg`; **compiled:** `qbank-abp.apkg` |
 
@@ -202,7 +204,7 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 
 
-1. Put HTML in `input/` (e.g. `infectious-disease.html` or `01-id-lecture.html` + parts).
+1. Put HTML in `input/` (e.g. `infectious-disease.html` or `01-id-lecture.html` + parts). Slide figures must use `<img src="...">` (paths relative to the HTML file).
 
 2. (Recommended) Add `<meta name="lecture-hours">` and `<meta name="lecture-topic">` in `<head>` — see [Lecture metadata](#lecture-metadata-optional).
 
@@ -210,7 +212,7 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 4. Review `output/<track>/reviews/<id>.html`; edit the matching `.json`.
 
-5. Import `output/<track>/ankideck/<short-id>.apkg` into Anki; open the matching `-high-yield.html` in that track folder.
+5. Import `output/<track>/ankideck/<short-id>.apkg` into Anki (stem/main cloze **Extra** includes packaged figures when inputs had images). Open `-high-yield.html` or `-illustrated.html` in that track folder; compiled qbank lists use filename topics (`12-endocrine`, …) for sort order and section headings.
 
 
 
@@ -518,7 +520,9 @@ Default **`GEMINI_MODEL=auto`**: anki-bot picks **Flash vs Pro per item** (simpl
 
 PDFs use **local text extraction** when `ANKI_BOT_PDF_MODE=auto` (default) and the PDF looks like a full MCQ; otherwise the raw PDF is sent for vision OCR.
 
-Optional cost flags (see [`.env.example`](.env.example)): `ANKI_BOT_BULK_QBANK`, `ANKI_BOT_MAX_IMAGE_SIDE`, `ANKI_BOT_CACHE_PROMPTS`, `ANKI_BOT_ESCALATE_PRO`.
+PNG qbanks use **local Tesseract OCR** when `ANKI_BOT_PNG_MODE=auto` (default) and OCR text looks like a full MCQ; figure pages (CXR, rash, etc.) stay on the vision path as a hybrid. Install Tesseract on Windows: `winget install UB-Mannheim.TesseractOCR`. Calibrate on your corpus (no Gemini cost): `python scripts/ocr_quality_check.py output`.
+
+Optional cost flags (see [`.env.example`](.env.example)): `ANKI_BOT_PNG_MODE`, `ANKI_BOT_BULK_QBANK`, `ANKI_BOT_MAX_IMAGE_SIDE`, `ANKI_BOT_CACHE_PROMPTS`, `ANKI_BOT_ESCALATE_PRO`.
 
 ### Bulk qbank cost playbook
 

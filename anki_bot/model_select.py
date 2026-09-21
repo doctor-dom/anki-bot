@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageFilter, ImageStat
 
 # Current Gemini API model ids (March 2026).
+FLASH_LITE_MODEL = "gemini-3.5-flash-lite"
 FLASH_MODEL = "gemini-3.5-flash"
 PRO_MODEL = "gemini-3.1-pro-preview"
 AUTO_MODEL = "auto"
@@ -18,6 +19,7 @@ LEGACY_MODEL_ALIASES: dict[str, str] = {
     "gemini-2.5-pro": PRO_MODEL,
     "gemini-2.5-flash": FLASH_MODEL,
     "gemini-2.0-flash": FLASH_MODEL,
+    "flash-lite": FLASH_LITE_MODEL,
 }
 
 
@@ -28,6 +30,8 @@ def normalize_model(model: str) -> str:
         return FLASH_MODEL
     if lowered in {"pro"}:
         return PRO_MODEL
+    if lowered in {"flash-lite", "lite"}:
+        return FLASH_LITE_MODEL
     return LEGACY_MODEL_ALIASES.get(lowered, model.strip())
 
 
@@ -80,7 +84,7 @@ def _threshold(name: str, default: float) -> float:
 
 
 def assess_images(image_paths: list[Path]) -> tuple[int, list[str]]:
-    """Return complexity score and human-readable reasons."""
+    """Return complexity score and human-readable reasons (legacy / tests)."""
     if not image_paths:
         return 0, []
 
@@ -145,6 +149,8 @@ def choose_model_for_lecture(
     """Pick Flash vs Pro for lecture HTML based on size and file count."""
     env_model = _resolve_requested(requested)
 
+    if env_model == FLASH_LITE_MODEL:
+        return ModelChoice(model=FLASH_LITE_MODEL, reasons=(), auto_selected=False)
     if env_model == FLASH_MODEL:
         return ModelChoice(model=FLASH_MODEL, reasons=(), auto_selected=False)
     if env_model == PRO_MODEL:
@@ -176,9 +182,11 @@ def choose_model(
     *,
     requested: str | None = None,
 ) -> ModelChoice:
-    """Resolve model: explicit override, env, or auto from image complexity."""
+    """Resolve model for vision-only screenshot sets (no OCR text path)."""
     env_model = _resolve_requested(requested)
 
+    if env_model == FLASH_LITE_MODEL:
+        return ModelChoice(model=FLASH_LITE_MODEL, reasons=(), auto_selected=False)
     if env_model == FLASH_MODEL:
         return ModelChoice(model=FLASH_MODEL, reasons=(), auto_selected=False)
     if env_model == PRO_MODEL:
@@ -186,14 +194,19 @@ def choose_model(
     if env_model not in {AUTO_MODEL, ""}:
         return ModelChoice(model=normalize_model(env_model), reasons=(), auto_selected=False)
 
-    score, reasons = assess_images(image_paths)
-    score_threshold = int(os.getenv("ANKI_BOT_PRO_SCORE", "2"))
-    if score >= score_threshold:
-        return ModelChoice(model=PRO_MODEL, reasons=tuple(reasons), auto_selected=True)
+    from anki_bot.image_ocr import path_is_figure
+
+    figures = [p for p in image_paths if path_is_figure(p)]
+    if figures:
+        return ModelChoice(
+            model=PRO_MODEL,
+            reasons=(f"figure vision page(s): {', '.join(p.name for p in figures[:3])}",),
+            auto_selected=True,
+        )
 
     return ModelChoice(
         model=FLASH_MODEL,
-        reasons=("simple screenshot set",) if not reasons else (f"score {score} < {score_threshold}",),
+        reasons=("text screenshot vision (Flash)",),
         auto_selected=True,
     )
 
@@ -203,10 +216,14 @@ def choose_model_for_question(
     pdf_paths: list[Path],
     image_paths: list[Path],
     requested: str | None = None,
+    ocr_text_only: bool = False,
+    vision_image_paths: list[Path] | None = None,
 ) -> ModelChoice:
     """Flash vs Pro for qbank PDFs and/or screenshots."""
     env_model = _resolve_requested(requested)
 
+    if env_model == FLASH_LITE_MODEL:
+        return ModelChoice(model=FLASH_LITE_MODEL, reasons=(), auto_selected=False)
     if env_model == FLASH_MODEL:
         return ModelChoice(model=FLASH_MODEL, reasons=(), auto_selected=False)
     if env_model == PRO_MODEL:
@@ -214,12 +231,36 @@ def choose_model_for_question(
     if env_model not in {AUTO_MODEL, ""}:
         return ModelChoice(model=normalize_model(env_model), reasons=(), auto_selected=False)
 
+    vision_paths = list(vision_image_paths or image_paths)
+
+    if image_paths and ocr_text_only and not vision_paths:
+        return ModelChoice(
+            model=FLASH_LITE_MODEL,
+            reasons=("OCR text only (no vision PNG)",),
+            auto_selected=True,
+        )
+
+    if image_paths and ocr_text_only and vision_paths:
+        from anki_bot.image_ocr import path_is_figure
+
+        if any(path_is_figure(p) for p in vision_paths):
+            return ModelChoice(
+                model=PRO_MODEL,
+                reasons=("OCR + figure vision page(s)",),
+                auto_selected=True,
+            )
+        return ModelChoice(
+            model=FLASH_LITE_MODEL,
+            reasons=("OCR text + small vision supplement",),
+            auto_selected=True,
+        )
+
     if image_paths:
-        return choose_model(image_paths, requested=AUTO_MODEL)
+        return choose_model(vision_paths or image_paths, requested=AUTO_MODEL)
 
     if len(pdf_paths) == 1:
         return ModelChoice(
-            model=FLASH_MODEL,
+            model=FLASH_LITE_MODEL,
             reasons=(f"single PDF {pdf_paths[0].name}",),
             auto_selected=True,
         )
@@ -230,4 +271,4 @@ def choose_model_for_question(
             auto_selected=True,
         )
 
-    return ModelChoice(model=FLASH_MODEL, reasons=("no media paths",), auto_selected=True)
+    return ModelChoice(model=FLASH_LITE_MODEL, reasons=("no media paths",), auto_selected=True)

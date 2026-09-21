@@ -44,7 +44,7 @@ def extract_pdf_text(path: Path) -> str:
     return "\n\n".join(parts).strip()
 
 
-def _looks_like_mcq(text: str) -> bool:
+def looks_like_mcq(text: str) -> bool:
     if len(text) < MIN_MCQ_TEXT_CHARS:
         return False
     upper = text.upper()
@@ -95,7 +95,7 @@ def prepare_pdf_question_text(
     if mode == PdfInputMode.TEXT:
         return PdfTextResult(text=combined, used_vision=False, warnings=tuple(warnings))
 
-    if _looks_like_mcq(combined):
+    if looks_like_mcq(combined):
         return PdfTextResult(text=combined, used_vision=False, warnings=tuple(warnings))
 
     warnings.append("Extracted PDF text does not look like a full MCQ; using vision PDF")

@@ -9,9 +9,11 @@ from pathlib import Path
 
 import genanki
 
-# Allowed inline HTML from anki-bot cloze cards (hy-* spans only).
+from anki_bot.media import append_image_tags, media_basenames_for_review, target_card_index
+
+# Allowed inline HTML from anki-bot cloze cards (hy-* spans and stem Extra images).
 _ALLOWED_TAG_RE = re.compile(
-    r"</span>|<span\s+class=\"hy-(?:topic|neg|dx|tx|diff)\"\s*>",
+    r"</span>|<span\s+class=\"hy-(?:topic|neg|dx|tx|diff)\"\s*>|<img\s+src=\"[^\"]+\"\s*/?>",
     re.IGNORECASE,
 )
 
@@ -31,6 +33,7 @@ CARD_CSS = """
 .hy-tx { color: #1e8449; }
 .hy-diff { color: #7d3c98; }
 .extra { margin-top: 1em; font-size: 0.9em; color: #444; }
+.extra img { max-width: 100%; height: auto; display: block; margin-top: 0.5em; }
 .nightMode .card { color: #eee; background-color: #2f2f2f; }
 .nightMode .hy-topic { color: #f0f0f0; }
 .nightMode .hy-neg { color: #e74c3c; }
@@ -106,23 +109,33 @@ def cloze_model() -> genanki.Model:
     )
 
 
-def build_deck(reviews: list, deck_name: str = "HUB::anki-bot") -> genanki.Deck:
+def build_deck(reviews: list, deck_name: str = "HUB::anki-bot") -> tuple[genanki.Deck, list[str]]:
     deck = genanki.Deck(deck_id_for_name(deck_name), deck_name)
     model = cloze_model()
+    media_files: list[str] = []
 
     for review in reviews:
-        for card in review.cards:
+        entries = media_basenames_for_review(review)
+        basenames = [name for _, name in entries]
+        media_files.extend(str(path) for path, _ in entries)
+        image_target = target_card_index(review)
+
+        for index, card in enumerate(review.cards):
+            extra = card.extra or ""
+            if index == image_target and basenames:
+                extra = append_image_tags(extra, basenames)
             note = genanki.Note(
                 model=model,
                 fields=[
                     escape_field_for_genanki(card.text),
-                    escape_field_for_genanki(card.extra or ""),
+                    escape_field_for_genanki(extra),
                 ],
                 tags=card.tags or [f"anki-bot::{review.id}"],
             )
             deck.add_note(note)
 
-    return deck
+    unique_media = list(dict.fromkeys(media_files))
+    return deck, unique_media
 
 
 def write_apkg(
@@ -131,13 +144,15 @@ def write_apkg(
     deck_name: str = "HUB::anki-bot",
 ) -> int:
     """Write .apkg and return note count."""
-    deck = build_deck(reviews, deck_name=deck_name)
+    deck, media_files = build_deck(reviews, deck_name=deck_name)
     note_count = len(deck.notes)
     if note_count == 0:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         return 0
 
     package = genanki.Package(deck)
+    if media_files:
+        package.media_files = media_files
     output_path.parent.mkdir(parents=True, exist_ok=True)
     package.write_to_file(str(output_path))
     return note_count

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -28,7 +29,7 @@ def _env_rclone_spec(key: str, default_suffix: str) -> str | None:
     raw = os.getenv(key, "").strip()
     if raw:
         return raw
-    remote = os.getenv("ANKI_BOT_RCLONE_REMOTE", "gdrive").strip()
+    remote = os.getenv("ANKI_BOT_RCLONE_REMOTE", "").strip()
     if not remote:
         return None
     return f"{remote}:anki-bot/{default_suffix}"
@@ -154,9 +155,12 @@ def discover_with_drive(local_root: Path) -> tuple[list[ContentGroup], list[Path
         with tempfile.TemporaryDirectory(prefix="anki-bot-drive-in-") as tmp:
             tmp_path = Path(tmp)
             if rclone_copy(spec, tmp_path):
-                input_roots.append(tmp_path)
                 drive_groups = discover_content(tmp_path)
                 groups = _merge_group_lists(groups, drive_groups)
+                cache_root = local_root / _DRIVE_INPUT_CACHE_DIRNAME
+                groups = _rehome_groups_from_temp(groups, tmp_path, cache_root)
+                if cache_root.is_dir():
+                    input_roots.append(cache_root)
             else:
                 warnings.append(f"Could not rclone copy {spec}; using local input only.")
     elif spec and not rclone_available():
@@ -165,19 +169,77 @@ def discover_with_drive(local_root: Path) -> tuple[list[ContentGroup], list[Path
     return groups, input_roots, warnings
 
 
+_DRIVE_INPUT_CACHE_DIRNAME = ".anki-bot-drive-input-cache"
+
+
+def _group_has_path_under(group: ContentGroup, root: Path) -> bool:
+    root_resolved = root.resolve()
+    for path in (*group.image_paths, *group.html_paths, *group.pdf_paths):
+        try:
+            path.resolve().relative_to(root_resolved)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def _rehome_paths(paths: tuple[Path, ...], tmp_path: Path, cache_root: Path) -> tuple[Path, ...]:
+    tmp_resolved = tmp_path.resolve()
+    rehomed: list[Path] = []
+    for path in paths:
+        try:
+            rel = path.resolve().relative_to(tmp_resolved)
+        except ValueError:
+            rehomed.append(path)
+            continue
+        dest = cache_root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if not dest.exists():
+            shutil.copy2(path, dest)
+        rehomed.append(dest)
+    return tuple(rehomed)
+
+
+def _rehome_groups_from_temp(
+    groups: list[ContentGroup],
+    tmp_path: Path,
+    cache_root: Path,
+) -> list[ContentGroup]:
+    if not any(_group_has_path_under(g, tmp_path) for g in groups):
+        return groups
+    cache_root.mkdir(parents=True, exist_ok=True)
+    rehomed: list[ContentGroup] = []
+    for group in groups:
+        if not _group_has_path_under(group, tmp_path):
+            rehomed.append(group)
+            continue
+        rehomed.append(
+            ContentGroup(
+                id=group.id,
+                kind=group.kind,
+                image_paths=_rehome_paths(group.image_paths, tmp_path, cache_root),
+                html_paths=_rehome_paths(group.html_paths, tmp_path, cache_root),
+                pdf_paths=_rehome_paths(group.pdf_paths, tmp_path, cache_root),
+                track=group.track,
+            )
+        )
+    return rehomed
+
+
 def _merge_group_lists(
     local_groups: list[ContentGroup],
     drive_groups: list[ContentGroup],
 ) -> list[ContentGroup]:
-    merged: dict[frozenset[tuple[str, int]], ContentGroup] = {}
-    for group in local_groups:
-        merged[group_content_signature(group)] = group
+    """Keep every local group; add Drive groups only when that content is not already local."""
+    local_sigs = {group_content_signature(g) for g in local_groups}
+    merged: list[ContentGroup] = list(local_groups)
     for group in drive_groups:
         sig = group_content_signature(group)
-        if sig in merged:
+        if sig in local_sigs:
             continue
-        merged[sig] = group
-    return sorted(merged.values(), key=lambda g: g.id.lower())
+        merged.append(group)
+        local_sigs.add(sig)
+    return sorted(merged, key=lambda g: g.id.lower())
 
 
 def load_review_json(path: Path) -> QuestionReview | None:

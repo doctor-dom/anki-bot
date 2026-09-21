@@ -17,6 +17,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system OCR
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+
       - name: Install anki-bot
         run: pip install -e .
 
@@ -44,6 +47,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: auto
           ANKI_BOT_PDF_MODE: auto
+          ANKI_BOT_PNG_MODE: auto
         run: |
           set -o pipefail
           anki-bot run 2>&1 | tee run.log

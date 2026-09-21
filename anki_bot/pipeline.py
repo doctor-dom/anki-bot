@@ -15,7 +15,8 @@ from anki_bot.discover import ContentGroup
 from anki_bot.drive_sync import discover_with_drive
 from anki_bot.gemini_review import review_content, review_from_fixture
 from anki_bot.html_extract import combine_lecture_html
-from anki_bot.html_render import write_high_yield_html, write_item_preview
+from anki_bot.html_render import write_high_yield_html, write_illustrated_html, write_item_preview
+from anki_bot.media import sync_media_for_reviews, track_media_dir
 from anki_bot.models import ContentKind, QuestionReview
 from anki_bot.outputs import (
     PackKind,
@@ -137,15 +138,74 @@ def _process_group(
     track_dir = reviews_dir(output_root, group.track)
     review_json = track_dir / f"{group.id}.json"
     save_review(review, review_json)
-    write_item_preview(review, track_dir / f"{group.id}.html")
+    media_by = sync_media_for_reviews([review], track_media_dir(output_root, group.track))
+    write_item_preview(review, track_dir / f"{group.id}.html", media_by_review=media_by)
 
     usage = _usage_record(review)
     if usage is not None:
         label = review.topic or review.id
         hours = review.card_budget.lecture_hours if review.card_budget else None
-        print(format_usage_line(label, usage, lecture_hours=hours))
+        input_note = review.usage.input_method if review.usage else ""
+        print(format_usage_line(label, usage, lecture_hours=hours, input_note=input_note))
 
     return review
+
+
+def _sync_pack_media(
+    output_root: Path,
+    pack: object,
+    pack_reviews: list[QuestionReview],
+) -> dict[str, list[str]]:
+    return sync_media_for_reviews(pack_reviews, track_media_dir(output_root, pack.track))
+
+
+def _write_pack_artifacts(
+    pack,
+    pack_reviews: list[QuestionReview],
+    output_root: Path,
+    media_by: dict[str, list[str]],
+    *,
+    review_only: bool,
+) -> tuple[list[Path], int]:
+    written: list[Path] = []
+    note_count = 0
+
+    if pack.pack_kind == PackKind.LECTURE:
+        write_high_yield_html(pack_reviews, pack.html_path)
+        written.append(pack.html_path)
+        if pack_reviews:
+            illustrated = pack.html_path.parent / f"{pack.label}-illustrated.html"
+            write_illustrated_html(pack_reviews[0], illustrated, media_by_review=media_by)
+            written.append(illustrated)
+    elif pack.pack_kind == PackKind.LECTURE_COMPILED:
+        write_high_yield_html(
+            pack_reviews,
+            pack.html_path,
+            include_figures=True,
+            media_by_review=media_by,
+        )
+        written.append(pack.html_path)
+    else:
+        write_high_yield_html(
+            pack_reviews,
+            pack.html_path,
+            group_by_topic=True,
+            include_figures=True,
+            media_by_review=media_by,
+        )
+        written.append(pack.html_path)
+
+    if review_only or pack.pack_kind == PackKind.LECTURE_COMPILED:
+        return written, note_count
+
+    note_count = write_apkg(pack_reviews, pack.apkg_path, deck_name=pack.deck_name)
+    if note_count == 0:
+        for review in pack_reviews:
+            review.warnings.append("No valid cloze cards to pack into .apkg")
+    else:
+        written.append(pack.apkg_path)
+        print(f"Wrote: {pack.apkg_path}")
+    return written, note_count
 
 
 def _write_output_packs(
@@ -168,18 +228,17 @@ def _write_output_packs(
             pack,
             this_run_ids=this_run_ids if pack.pack_kind == PackKind.QBANK_RUN else None,
         )
-        if not pack_reviews and pack.pack_kind != PackKind.LECTURE:
+        if not pack_reviews and pack.pack_kind not in (PackKind.LECTURE, PackKind.LECTURE_COMPILED):
             continue
-        write_high_yield_html(pack_reviews, pack.html_path)
-        written.append(pack.html_path)
-        if not review_only:
-            count = write_apkg(pack_reviews, pack.apkg_path, deck_name=pack.deck_name)
-            if count == 0:
-                for review in pack_reviews:
-                    review.warnings.append("No valid cloze cards to pack into .apkg")
-            else:
-                written.append(pack.apkg_path)
-                print(f"Wrote: {pack.apkg_path}")
+        media_by = _sync_pack_media(output_root, pack, pack_reviews)
+        paths, _ = _write_pack_artifacts(
+            pack,
+            pack_reviews,
+            output_root,
+            media_by,
+            review_only=review_only,
+        )
+        written.extend(paths)
     return written
 
 
@@ -278,14 +337,22 @@ def build_from_reviews(
         review = load_review(path)
         review = filter_valid_cards(review, max_cards=max_cards)
         save_review(review, path)
-        write_item_preview(review, path.with_suffix(".html"))
+        media_by = sync_media_for_reviews([review], track_media_dir(output_root, review.track))
+        write_item_preview(review, path.with_suffix(".html"), media_by_review=media_by)
         all_reviews.append(review)
 
     for pack in packs_for_reviews(output_root, all_reviews, this_run_reviews=None):
         pack_reviews = reviews_for_pack(all_reviews, pack)
-        if not pack_reviews and pack.pack_kind != PackKind.LECTURE:
+        if not pack_reviews and pack.pack_kind not in (PackKind.LECTURE, PackKind.LECTURE_COMPILED):
             continue
-        write_high_yield_html(pack_reviews, pack.html_path)
-        total_notes += write_apkg(pack_reviews, pack.apkg_path, deck_name=pack.deck_name)
+        media_by = _sync_pack_media(output_root, pack, pack_reviews)
+        _, note_count = _write_pack_artifacts(
+            pack,
+            pack_reviews,
+            output_root,
+            media_by,
+            review_only=False,
+        )
+        total_notes += note_count
 
     return all_reviews, total_notes

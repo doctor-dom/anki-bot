@@ -12,7 +12,7 @@ from anki_bot.models import ContentKind, QuestionReview
 from anki_bot.outputs import iter_review_json_paths, reviews_dir
 from anki_bot.processed import should_skip_group
 from anki_bot.usage import estimate_usd, format_usd, rates_for_model
-from anki_bot.model_select import FLASH_MODEL, PRO_MODEL
+from anki_bot.model_select import FLASH_LITE_MODEL, FLASH_MODEL, PRO_MODEL
 
 
 @dataclass(frozen=True)
@@ -71,9 +71,9 @@ def _fallback_averages() -> CostAverages:
     q_in, q_out = 4000, 1500
     l_in, l_out = 12000, 3500
     return CostAverages(
-        question_usd=estimate_usd(q_in, q_out, model=FLASH_MODEL),
+        question_usd=estimate_usd(q_in, q_out, model=FLASH_LITE_MODEL),
         lecture_usd=estimate_usd(l_in, l_out, model=FLASH_MODEL),
-        question_model=FLASH_MODEL,
+        question_model=FLASH_LITE_MODEL,
         lecture_model=FLASH_MODEL,
         sample_count=0,
     )

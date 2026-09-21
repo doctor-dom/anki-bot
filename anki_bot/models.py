@@ -83,6 +83,8 @@ class UsageInfo(BaseModel):
     output_tokens: int = 0
     estimated_usd: float = 0.0
     model: str = ""
+    thought_tokens: int = 0
+    input_method: str = ""
 
 
 class SourceFileFingerprint(BaseModel):

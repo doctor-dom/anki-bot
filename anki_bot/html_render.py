@@ -6,7 +6,7 @@ from html import escape
 from pathlib import Path
 
 from anki_bot.models import CATEGORY_CSS, Category, ContentKind, QuestionReview, topic_heading
-from anki_bot.outputs import normalize_track
+from anki_bot.outputs import REVIEWS_DIRNAME, normalize_track, qbank_sort_key, topic_heading_for_sort_key
 
 LIST_CSS = """
 :root {
@@ -75,6 +75,15 @@ h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
 }
 .hy-item span::after { content: " ·"; color: var(--muted); }
 .hy-item span:last-child::after { content: ""; }
+.hy-figure { margin: 0.75rem 0; }
+.hy-figure img { max-width: 100%; height: auto; display: block; }
+.topic-group { margin-bottom: 1.5rem; }
+.topic-group-title {
+  font-size: 1.25rem;
+  margin: 0 0 1rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 2px solid var(--border);
+}
 .warnings {
   margin-top: 0.75rem;
   padding: 0.5rem 0.75rem;
@@ -95,8 +104,24 @@ h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
 """
 
 
+def media_prefix_for_path(output_path: Path) -> str:
+    if output_path.parent.name == REVIEWS_DIRNAME:
+        return "../media/"
+    return "media/"
+
+
 def _span(text: str, css_class: str) -> str:
     return f'<span class="{css_class}">{escape(text)}</span>'
+
+
+def render_figure_html(basenames: list[str], *, media_prefix: str) -> str:
+    if not basenames:
+        return ""
+    blocks: list[str] = []
+    for name in basenames:
+        src = escape(f"{media_prefix}{name}")
+        blocks.append(f'<figure class="hy-figure"><img src="{src}" alt=""></figure>')
+    return "".join(blocks)
 
 
 def render_high_yield_item_html(review: QuestionReview) -> str:
@@ -112,10 +137,19 @@ def render_high_yield_item_html(review: QuestionReview) -> str:
     return f'<div class="hy-item">{"".join(parts)}</div>'
 
 
-def render_high_yield_section(review: QuestionReview) -> str:
+def render_high_yield_section(
+    review: QuestionReview,
+    *,
+    media_basenames: list[str] | None = None,
+    media_prefix: str = "media/",
+    include_figures: bool = False,
+) -> str:
     heading = topic_heading(review)
     meta = escape(review.processed_at or review.id)
     item_html = render_high_yield_item_html(review)
+    figures_html = ""
+    if include_figures and media_basenames:
+        figures_html = render_figure_html(media_basenames, media_prefix=media_prefix)
     warnings_html = ""
     if review.warnings:
         items = "".join(f"<li>{escape(w)}</li>" for w in review.warnings)
@@ -126,13 +160,56 @@ def render_high_yield_section(review: QuestionReview) -> str:
   <div class="section-meta">{meta} · {escape(review.id)}</div>
   <h2 class="section-title hy-topic">{escape(heading)}</h2>
   {item_html}
+  {figures_html}
   {warnings_html}
 </section>
 """.strip()
 
 
-def render_high_yield_page(reviews: list[QuestionReview], title: str = "High-Yield List") -> str:
-    sections = "\n".join(render_high_yield_section(r) for r in reviews if r.high_yield)
+def render_high_yield_page(
+    reviews: list[QuestionReview],
+    title: str = "High-Yield List",
+    *,
+    group_by_topic: bool = False,
+    include_figures: bool = False,
+    media_by_review: dict[str, list[str]] | None = None,
+    media_prefix: str = "media/",
+) -> str:
+    media_map = media_by_review or {}
+    body_parts: list[str] = []
+    prev_topic: str | None = None
+    group_open = False
+
+    for review in reviews:
+        if not review.high_yield and not (include_figures and media_map.get(review.id)):
+            continue
+
+        if group_by_topic and review.kind == ContentKind.QUESTION:
+            topic_key = qbank_sort_key(review)[0]
+            if topic_key != prev_topic:
+                if group_open:
+                    body_parts.append("</div>")
+                heading = topic_heading_for_sort_key(topic_key)
+                body_parts.append(
+                    f'<div class="topic-group"><h2 class="topic-group-title hy-topic">{escape(heading)}</h2>'
+                )
+                group_open = True
+                prev_topic = topic_key
+
+        basenames = media_map.get(review.id, [])
+        body_parts.append(
+            render_high_yield_section(
+                review,
+                media_basenames=basenames,
+                media_prefix=media_prefix,
+                include_figures=include_figures,
+            )
+        )
+
+    if group_open:
+        body_parts.append("</div>")
+
+    sections = "\n".join(body_parts)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -157,8 +234,20 @@ def render_high_yield_page(reviews: list[QuestionReview], title: str = "High-Yie
 """
 
 
-def render_item_preview(review: QuestionReview) -> str:
-    section = render_high_yield_section(review)
+def render_item_preview(
+    review: QuestionReview,
+    *,
+    media_by_review: dict[str, list[str]] | None = None,
+    media_prefix: str = "../media/",
+) -> str:
+    media_map = media_by_review or {}
+    basenames = media_map.get(review.id, [])
+    section = render_high_yield_section(
+        review,
+        media_basenames=basenames,
+        media_prefix=media_prefix,
+        include_figures=bool(basenames),
+    )
     cards_html = ""
     if review.cards:
         blocks = []
@@ -185,6 +274,14 @@ def render_item_preview(review: QuestionReview) -> str:
             )
         distractors = f'<div class="preview-block"><h3>Distractors</h3><ul>{"".join(rows)}</ul></div>'
 
+    source_html_block = ""
+    if review.source_html:
+        source_html_block = (
+            '<div class="preview-block"><h3>Source HTML</h3><ul>'
+            + "".join(f"<li>{escape(p)}</li>" for p in review.source_html)
+            + "</ul></div>"
+        )
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -198,7 +295,7 @@ def render_item_preview(review: QuestionReview) -> str:
   <div class="preview-block"><h3>{label}</h3><p>{stem}</p></div>
   {"<div class='preview-block'><h3>" + clues_label + "</h3><p>" + clues + "</p></div>" if clues else ""}
   {"<div class='preview-block'><h3>" + pearl_label + "</h3><p>" + escape(review.correct_pearl) + "</p></div>" if review.correct_pearl else ""}
-  {"<div class='preview-block'><h3>Source HTML</h3><ul>" + "".join(f"<li>{escape(p)}</li>" for p in review.source_html) + "</ul></div>" if review.source_html else ""}
+  {source_html_block}
   {distractors}
   {section}
   {cards_html}
@@ -207,11 +304,59 @@ def render_item_preview(review: QuestionReview) -> str:
 """
 
 
-def write_high_yield_html(reviews: list[QuestionReview], output_path: Path) -> None:
+def write_high_yield_html(
+    reviews: list[QuestionReview],
+    output_path: Path,
+    *,
+    group_by_topic: bool = False,
+    include_figures: bool = False,
+    media_by_review: dict[str, list[str]] | None = None,
+    title: str | None = None,
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(render_high_yield_page(reviews), encoding="utf-8")
+    page_title = title or output_path.stem.replace("-", " ").title()
+    output_path.write_text(
+        render_high_yield_page(
+            reviews,
+            title=page_title,
+            group_by_topic=group_by_topic,
+            include_figures=include_figures,
+            media_by_review=media_by_review,
+            media_prefix=media_prefix_for_path(output_path),
+        ),
+        encoding="utf-8",
+    )
 
 
-def write_item_preview(review: QuestionReview, output_path: Path) -> None:
+def write_illustrated_html(
+    review: QuestionReview,
+    output_path: Path,
+    *,
+    media_by_review: dict[str, list[str]] | None = None,
+) -> None:
+    label = review.topic or review.id
+    title = f"{label} (illustrated)"
+    write_high_yield_html(
+        [review],
+        output_path,
+        include_figures=True,
+        media_by_review=media_by_review,
+        title=title,
+    )
+
+
+def write_item_preview(
+    review: QuestionReview,
+    output_path: Path,
+    *,
+    media_by_review: dict[str, list[str]] | None = None,
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(render_item_preview(review), encoding="utf-8")
+    output_path.write_text(
+        render_item_preview(
+            review,
+            media_by_review=media_by_review,
+            media_prefix=media_prefix_for_path(output_path),
+        ),
+        encoding="utf-8",
+    )
