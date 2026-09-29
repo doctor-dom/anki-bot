@@ -39,7 +39,7 @@ jobs:
           RCLONE_REMOTE: gdrive
         run: |
           mkdir -p input output
-          rclone copy "${RCLONE_REMOTE}:anki-bot/input" ./input --times
+          rclone copy "${RCLONE_REMOTE}:anki-bot/input" ./input
           rclone copy "${RCLONE_REMOTE}:anki-bot/output" ./output || true
 
       - name: Run anki-bot
