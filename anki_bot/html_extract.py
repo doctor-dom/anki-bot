@@ -13,6 +13,9 @@ MAX_LECTURE_CHARS = 120_000
 
 HOURS_META_NAMES = frozenset({"lecture-hours", "duration", "lecture-duration"})
 TOPIC_META_NAMES = frozenset({"lecture-topic", "topic"})
+HY_SPAN_CLASSES = frozenset(
+    {"hy-topic", "hy-neg", "hy-dx", "hy-tx", "hy-diff"},
+)
 
 
 @dataclass
@@ -157,6 +160,89 @@ def parse_lecture_meta(paths: list[Path], *, group_id: str | None = None) -> Lec
         combined.topic = topic_from_group_id(group_id)
 
     return combined
+
+
+class _QuestionHtmlExtractor(HTMLParser):
+    """Plain text plus preserved ``hy-*`` span markup for OCR qbank HTML."""
+
+    SKIP_TAGS = {"script", "style", "noscript", "svg", "head"}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._chunks: list[str] = []
+        self._skip_depth = 0
+        self._preserve_span_depth = 0
+
+    @staticmethod
+    def _span_class_attr(attrs: list[tuple[str, str | None]]) -> str | None:
+        for key, value in attrs:
+            if key.lower() == "class" and value:
+                return value
+        return None
+
+    @staticmethod
+    def _is_hy_span(class_attr: str) -> bool:
+        tokens = class_attr.lower().split()
+        return any(token in HY_SPAN_CLASSES for token in tokens)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag_lower = tag.lower()
+        if tag_lower in self.SKIP_TAGS:
+            self._skip_depth += 1
+            return
+        if tag_lower == "span":
+            class_attr = self._span_class_attr(attrs)
+            if class_attr and self._is_hy_span(class_attr):
+                safe_class = " ".join(
+                    t for t in class_attr.split() if t.lower() in HY_SPAN_CLASSES
+                )
+                self._chunks.append(f'<span class="{safe_class}">')
+                self._preserve_span_depth += 1
+            return
+        if tag_lower in {"p", "br", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"}:
+            self._chunks.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_lower = tag.lower()
+        if tag_lower in self.SKIP_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+            return
+        if tag_lower == "span" and self._preserve_span_depth:
+            self._chunks.append("</span>")
+            self._preserve_span_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        text = data.strip()
+        if text:
+            self._chunks.append(text)
+
+    def get_text(self) -> str:
+        raw = " ".join(self._chunks)
+        raw = re.sub(r"[ \t]+", " ", raw)
+        raw = re.sub(r"\n\s*\n+", "\n\n", raw)
+        return raw.strip()
+
+
+def extract_question_html_text(path: Path) -> str:
+    raw_html = path.read_text(encoding="utf-8", errors="replace")
+    parser = _QuestionHtmlExtractor()
+    parser.feed(raw_html)
+    return parser.get_text()
+
+
+def combine_question_html(paths: list[Path]) -> tuple[str, list[str]]:
+    """Return combined qbank question text (with hy spans) and warnings."""
+    warnings: list[str] = []
+    sections: list[str] = []
+    for path in paths:
+        text = extract_question_html_text(path)
+        if not text:
+            warnings.append(f"No extractable text in {path.name}")
+            continue
+        sections.append(f"=== {path.name} ===\n{text}")
+    return "\n\n".join(sections).strip(), warnings
 
 
 def extract_html_text(path: Path) -> str:

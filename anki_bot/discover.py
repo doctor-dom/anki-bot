@@ -54,6 +54,39 @@ def _is_html(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in HTML_EXTENSIONS
 
 
+def _path_under_qbank_html(path: Path) -> bool:
+    for parent in path.parents:
+        if parent.name.lower() == "qbank-html":
+            return True
+    return False
+
+
+def _html_has_question_meta(path: Path) -> bool:
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:8192]
+    except OSError:
+        return False
+    return bool(
+        re.search(
+            r'<meta\s+[^>]*name\s*=\s*["\']anki-bot-kind["\'][^>]*content\s*=\s*["\']question["\']',
+            head,
+            re.IGNORECASE,
+        )
+        or re.search(
+            r'<meta\s+[^>]*content\s*=\s*["\']question["\'][^>]*name\s*=\s*["\']anki-bot-kind["\']',
+            head,
+            re.IGNORECASE,
+        )
+    )
+
+
+def html_content_kind(path: Path) -> ContentKind:
+    """Lecture HTML by default; OCR qbank HTML under ``qbank-html/`` or with kind meta."""
+    if _path_under_qbank_html(path) or _html_has_question_meta(path):
+        return ContentKind.QUESTION
+    return ContentKind.LECTURE
+
+
 def _is_pdf(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in PDF_EXTENSIONS
 
@@ -148,11 +181,14 @@ def _discover_single_file(root: Path) -> list[ContentGroup]:
             )
         ]
     if _is_html(root):
+        kind = html_content_kind(root)
         key = _numbered_topic_key(root.stem) or _slug(root.stem)
+        if kind == ContentKind.LECTURE:
+            key = _lecture_id(key)
         return [
             ContentGroup(
-                id=_lecture_id(key),
-                kind=ContentKind.LECTURE,
+                id=key,
+                kind=kind,
                 html_paths=(root,),
                 track=track,
             )
@@ -221,23 +257,33 @@ def _discover_directory(directory: Path) -> list[ContentGroup]:
             )
 
     if direct_html:
-        if _use_loose_file_grouping(direct_html):
-            groups.extend(
-                _group_loose_files(
-                    direct_html,
-                    kind=ContentKind.LECTURE,
-                    folder_name=directory.name,
+        lecture_html = [p for p in direct_html if html_content_kind(p) == ContentKind.LECTURE]
+        question_html = [p for p in direct_html if html_content_kind(p) == ContentKind.QUESTION]
+        for html_files, kind in (
+            (lecture_html, ContentKind.LECTURE),
+            (question_html, ContentKind.QUESTION),
+        ):
+            if not html_files:
+                continue
+            if _use_loose_file_grouping(html_files):
+                groups.extend(
+                    _group_loose_files(
+                        html_files,
+                        kind=kind,
+                        folder_name=directory.name,
+                    )
                 )
-            )
-        else:
-            groups.append(
-                ContentGroup(
-                    id=_lecture_id(_slug(directory.name)),
-                    kind=ContentKind.LECTURE,
-                    html_paths=tuple(_sorted_paths(direct_html)),
-                    track=track_from_paths(*direct_html),
+            else:
+                folder_id = _slug(directory.name)
+                group_id = _lecture_id(folder_id) if kind == ContentKind.LECTURE else folder_id
+                groups.append(
+                    ContentGroup(
+                        id=group_id,
+                        kind=kind,
+                        html_paths=tuple(_sorted_paths(html_files)),
+                        track=track_from_paths(*html_files),
+                    )
                 )
-            )
 
     child_dirs = [
         p
@@ -315,6 +361,13 @@ def _group_loose_files(
         sorted_paths = _sorted_paths(paths)
         track = track_from_paths(*sorted_paths)
         if kind == ContentKind.QUESTION:
+            if paths and all(_is_html(p) for p in paths):
+                return ContentGroup(
+                    id=final_id,
+                    kind=kind,
+                    html_paths=tuple(sorted_paths),
+                    track=track,
+                )
             return ContentGroup(
                 id=final_id,
                 kind=kind,
@@ -345,6 +398,15 @@ def _group_loose_files(
         sorted_paths = _sorted_paths(files)
         track = track_from_paths(*sorted_paths)
         if kind == ContentKind.QUESTION:
+            if all(_is_html(p) for p in sorted_paths):
+                return [
+                    ContentGroup(
+                        id=final_id,
+                        kind=kind,
+                        html_paths=tuple(sorted_paths),
+                        track=track,
+                    )
+                ]
             return [
                 ContentGroup(
                     id=final_id,
@@ -371,5 +433,7 @@ def _group_loose_files(
 
     track = track_from_paths(path)
     if kind == ContentKind.QUESTION:
+        if _is_html(path):
+            return [ContentGroup(id=final_id, kind=kind, html_paths=(path,), track=track)]
         return [ContentGroup(id=final_id, kind=kind, image_paths=(path,), track=track)]
     return [ContentGroup(id=final_id, kind=kind, html_paths=(path,), track=track)]

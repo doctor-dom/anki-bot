@@ -16,7 +16,11 @@ from pydantic import ValidationError
 
 from anki_bot.card_budget import CardBudget
 from anki_bot.discover import ContentGroup
-from anki_bot.html_extract import collect_lecture_image_paths, combine_lecture_html
+from anki_bot.html_extract import (
+    collect_lecture_image_paths,
+    combine_lecture_html,
+    combine_question_html,
+)
 from anki_bot.image_ocr import PngPrepareResult, prepare_png_question_input, path_is_figure
 from anki_bot.model_select import (
     AUTO_MODEL,
@@ -55,6 +59,14 @@ BULK_QBANK_ADDENDUM = """
 
 Keep output compact: at most 3 cloze cards, concise distractors, minimal high_yield rows.
 Do not pad output to hit card targets.
+"""
+
+QBANK_HTML_ADDENDUM = """
+## Color-coded qbank HTML
+
+The question text may include `<span class="hy-topic|hy-neg|hy-dx|hy-tx|hy-diff">` markup from OCR.
+Preserve those spans in cloze card `text` and `extra` fields when coloring terms.
+Stay within the question card budget; do not invent facts beyond the provided text.
 """
 
 _prompt_cache: dict[tuple[str, str], str] = {}
@@ -171,12 +183,14 @@ def _budget_instruction(budget: CardBudget) -> str:
     )
 
 
-def _question_static_parts(budget: CardBudget) -> list[str]:
+def _question_static_parts(budget: CardBudget, *, from_html: bool = False) -> list[str]:
     parts: list[str] = [
         load_tutor_prompt(),
         ACCURACY_ADDENDUM,
         _budget_instruction(budget),
     ]
+    if from_html:
+        parts.append(QBANK_HTML_ADDENDUM)
     if _bulk_mode_enabled():
         parts.append(BULK_QBANK_ADDENDUM)
     return parts
@@ -531,6 +545,69 @@ def review_images(
     )
 
 
+def review_question_html(
+    question_id: str,
+    html_paths: list[Path],
+    *,
+    model: str | None = None,
+    budget: CardBudget | None = None,
+    track: str = "",
+    client: genai.Client | None = None,
+) -> QuestionReview:
+    """Send color-coded qbank HTML (external OCR) to Gemini as a board question."""
+    if not html_paths:
+        raise ValueError("No HTML files provided")
+
+    from anki_bot.card_budget import budget_for_question
+
+    client = client or get_client()
+    card_budget = budget or budget_for_question()
+    question_text, extract_warnings = combine_question_html(html_paths)
+    if not question_text.strip():
+        raise RuntimeError(
+            f"No extractable text in HTML file(s): {', '.join(p.name for p in html_paths)}"
+        )
+
+    choice = _pick_question_model(
+        pdf_paths=[],
+        image_paths=[],
+        model=model,
+        png_result=None,
+    )
+    _print_model_choice(choice)
+    model_name = choice.model
+    print("Input method: qbank HTML text")
+
+    dynamic: list[types.Part | str] = [
+        "\n\nAnalyze this board-style question from color-coded HTML. Return JSON matching the schema exactly.",
+        f"\n\n--- QUESTION TEXT (from HTML) ---\n{question_text}\n--- END QUESTION TEXT ---",
+    ]
+
+    parsed, usage = _call_gemini(
+        client,
+        model_name,
+        static_parts=_question_static_parts(card_budget, from_html=True),
+        dynamic_parts=dynamic,
+        cache_kind="question",
+        low_thinking=True,
+    )
+    review = review_from_gemini(
+        question_id,
+        parsed,
+        kind=ContentKind.QUESTION,
+        source_html=[str(p.resolve()) for p in html_paths],
+    )
+    review.warnings.extend(extract_warnings)
+    return _attach_metadata(
+        review,
+        budget=card_budget,
+        usage=usage,
+        model_name=model_name,
+        track=track,
+        input_method="qbank HTML text",
+    )
+
+
 def review_lecture_html(
     lecture_id: str,
     html_paths: list[Path],
@@ -615,6 +692,15 @@ def review_content(
 ) -> QuestionReview:
     if group.kind == ContentKind.LECTURE:
         return review_lecture_html(
+            group.id,
+            list(group.html_paths),
+            model=model,
+            budget=budget,
+            track=group.track,
+            client=client,
+        )
+    if group.html_paths:
+        return review_question_html(
             group.id,
             list(group.html_paths),
             model=model,

@@ -232,6 +232,26 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 
 
+### Workflow C — External OCR qbank HTML
+
+
+
+Use this when a **separate tool** already produced color-coded HTML for each question (with `hy-topic`, `hy-neg`, `hy-dx`, `hy-tx`, `hy-diff` spans). anki-bot treats it like Workflow B and packs into the same `qbank-<track>` decks.
+
+
+
+1. Drop one HTML file per question under `input/<track>/qbank-html/` (e.g. `input/abp/qbank-html/12-endocrine.html`). Alternatively, set `<meta name="anki-bot-kind" content="question">` in the HTML `<head>`.
+
+2. `anki-bot run` — text is extracted locally (no vision); Gemini builds clozes using the [question prompt](prompts/tutor.md) and preserves `hy-*` spans in cards.
+
+3. Outputs match Workflow B: `output/<track>/reviews/<id>.json`, `output/<track>/ankideck/qbank-<track>.apkg`.
+
+
+
+**Capturing questions from the web (no site scraper):** If the page blocks highlighting, use **screenshots** (Workflow B PNG path with `ANKI_BOT_PNG_MODE=auto`) or **Print to PDF** (`N - topic.pdf`). Run your external OCR/color tool on those exports, then place the resulting HTML in `qbank-html/`.
+
+
+
 **Mixed run:** Short-named lecture `.apkg` files plus per-track qbank run + compiled packs.
 
 
