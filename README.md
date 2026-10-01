@@ -301,7 +301,7 @@ Default `-o output` is resolved to the **repository root** (directory containing
 
 ## Nightly cloud run (GitHub Actions + Google Drive)
 
-Drop new sources in **Google Drive** `anki-bot/input/` (mirror repo layout: `abp/…`, `endo/…`). A scheduled GitHub Actions workflow (`.github/workflows/nightly.yml`) runs about **2:00 AM US Eastern** (06:00 UTC): pull `input/` and `output/` from Drive, `anki-bot run`, push `output/` back. GitHub repo secrets: `GEMINI_API_KEY`, `RCLONE_CONFIG` (full `rclone.conf` from `rclone config` on your PC).
+Drop new sources in **Google Drive** `anki-bot/input/` (mirror repo layout: `abp/…`, `endo/…`). The **NightBot** GitHub Actions workflow (`.github/workflows/nightly.yml`) runs daily at **2:00 AM US Eastern** (`America/New_York`, handles EST/EDT): pull `input/` and `output/` from Drive, `anki-bot run`, push `output/` back. GitHub repo secrets: `GEMINI_API_KEY`, `RCLONE_CONFIG` (full `rclone.conf` from `rclone config` on your PC).
 
 **Skip across local and Drive:** fingerprints use file **hash + size** (not absolute paths). Skip checks **local** `output/<track>/reviews/<id>.json` **and** Drive (track path first, then legacy flat `output/reviews/`), and discovers **local** `input/` plus optional Drive input (see `.env.example`). Same content is not billed twice on PC vs cloud.
 

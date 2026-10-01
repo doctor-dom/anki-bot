@@ -1,9 +1,10 @@
-name: Nightly anki-bot run
+name: NightBot
 
 on:
   schedule:
-    # 06:00 UTC ≈ 2:00 AM US Eastern (EDT)
-    - cron: "0 6 * * *"
+    # 2:00 AM US Eastern (EST/EDT via IANA timezone)
+    - cron: "0 2 * * *"
+      timezone: America/New_York
   workflow_dispatch:
 
 jobs:
@@ -60,7 +61,7 @@ jobs:
       - name: Job summary
         if: always()
         run: |
-          echo "## anki-bot nightly" >> "$GITHUB_STEP_SUMMARY"
+          echo "## NightBot" >> "$GITHUB_STEP_SUMMARY"
           if [ -f run.log ]; then
             tail -n 40 run.log >> "$GITHUB_STEP_SUMMARY"
           fi
