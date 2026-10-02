@@ -17,17 +17,9 @@ on:
           reprocess the rest of the library). Overrides force when set.
         type: string
         default: ""
-  # One-shot: a push that adds .github/rerun-failed-questions.txt and includes
-  # [rerun-five] in the commit message rebuilds just those ids. workflow_dispatch
-  # is preferred; this exists when the caller cannot call the dispatch API.
-  push:
-    branches: [master]
-    paths:
-      - ".github/rerun-failed-questions.txt"
 
 jobs:
   run:
-    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[rerun-five]')
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
