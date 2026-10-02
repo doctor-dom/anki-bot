@@ -338,7 +338,7 @@ File → Import → `output\abp\ankideck\all-abp.apkg` (or a topic/folder deck).
 
 If you use **Drive for Desktop**, you can skip rclone and open the mirrored `anki-bot\output\ankideck` folder instead.
 
-**Upload local review edits** before 2 AM: `anki-bot push-output` or `.\scripts\drive-sync.ps1 push-output`. Do not use `--force` on the scheduled workflow.
+**Upload local review edits** before 2 AM: `anki-bot push-output` or `.\scripts\drive-sync.ps1 push-output`. To re-run every PNG with the latest code, use **Actions → NightBot → Run workflow** and enable **force** (manual dispatch only; the 2 AM schedule stays incremental). Drive `output/` is updated with `rclone sync`, so old topic decks and HTML are removed when packs are rebuilt.
 
 
 

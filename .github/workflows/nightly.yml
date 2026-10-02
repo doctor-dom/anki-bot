@@ -6,6 +6,11 @@ on:
     - cron: "0 2 * * *"
       timezone: America/New_York
   workflow_dispatch:
+    inputs:
+      force:
+        description: Reprocess every input group (--force), ignoring unchanged fingerprints
+        type: boolean
+        default: false
 
 jobs:
   run:
@@ -55,7 +60,12 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: |
           set -o pipefail
-          anki-bot run 2>&1 | tee run.log
+          EXTRA=()
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
+            EXTRA+=(--force)
+            echo "Force reprocess enabled: all PNG/PDF/HTML groups will call Gemini again."
+          fi
+          anki-bot run "${EXTRA[@]}" 2>&1 | tee run.log
 
       - name: Push output to Google Drive
         if: always()
