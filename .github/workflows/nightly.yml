@@ -11,6 +11,12 @@ on:
         description: Reprocess every input group (--force), ignoring unchanged fingerprints
         type: boolean
         default: false
+      only:
+        description: >-
+          Comma-separated group ids to reprocess (forces those ids only; does not
+          reprocess the rest of the library). Overrides force when set.
+        type: string
+        default: ""
 
 jobs:
   run:
@@ -58,10 +64,15 @@ jobs:
           ANKI_BOT_GEMINI_TIMEOUT_S: "180"
           ANKI_BOT_RUN_BUDGET_MINUTES: "300"
           PYTHONUNBUFFERED: "1"
+          NIGHTBOT_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.only || '' }}
+          NIGHTBOT_FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
         run: |
           set -o pipefail
           EXTRA=()
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
+          if [ -n "$NIGHTBOT_ONLY" ]; then
+            EXTRA+=(--only "$NIGHTBOT_ONLY")
+            echo "Reprocessing only: $NIGHTBOT_ONLY"
+          elif [ "$NIGHTBOT_FORCE" = "true" ]; then
             EXTRA+=(--force)
             echo "Force reprocess enabled: all PNG/PDF/HTML groups will call Gemini again."
           fi

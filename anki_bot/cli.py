@@ -35,6 +35,16 @@ def _optional_max_cards(raw: str | None) -> int | None:
     return int(raw)
 
 
+def parse_only_ids(raw: str | None) -> frozenset[str] | None:
+    """Split a comma-separated ``--only`` value into group ids."""
+    if raw is None or not str(raw).strip():
+        return None
+    selected = frozenset(
+        part.strip() for part in str(raw).replace("\n", ",").split(",") if part.strip()
+    )
+    return selected or None
+
+
 def _resolve_input_path(raw: str | None) -> Path:
     if raw is None or raw == "":
         return resolve_default_input()
@@ -50,7 +60,12 @@ def cmd_process(args: argparse.Namespace) -> int:
 
     try:
         if getattr(args, "dry_run", False):
-            report = estimate_path(input_path, output_root, force=args.force)
+            report = estimate_path(
+                input_path,
+                output_root,
+                force=args.force,
+                only_ids=parse_only_ids(getattr(args, "only", None)),
+            )
             print(format_estimate_report(report))
             return 0
 
@@ -63,6 +78,7 @@ def cmd_process(args: argparse.Namespace) -> int:
             deck_name=args.deck,
             fixture=fixture,
             force=args.force,
+            only_ids=parse_only_ids(getattr(args, "only", None)),
         )
     except (FileNotFoundError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -143,6 +159,14 @@ def build_parser() -> argparse.ArgumentParser:
             "--force",
             action="store_true",
             help="Reprocess all discovered groups even if source files are unchanged",
+        )
+        p.add_argument(
+            "--only",
+            default="",
+            help=(
+                "Comma-separated group ids to reprocess even if unchanged. "
+                "Every other group is left as-is; packs still rebuild from all reviews."
+            ),
         )
         p.add_argument(
             "--dry-run",

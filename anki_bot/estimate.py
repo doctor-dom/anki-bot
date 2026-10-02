@@ -93,21 +93,28 @@ def estimate_path(
     output_root: Path,
     *,
     force: bool = False,
+    only_ids: set[str] | frozenset[str] | None = None,
 ) -> EstimateReport:
     groups, input_roots, _drive_warnings = discover_with_drive(input_path)
     if not groups:
         raise FileNotFoundError(f"No supported inputs found under {input_path}")
 
+    selected: frozenset[str] | None = None
+    if only_ids:
+        selected = frozenset(part.strip() for part in only_ids if part and part.strip()) or None
     averages = _load_usage_averages(output_root) or _fallback_averages()
 
     would_run: list[ContentGroup] = []
     would_skip: list[ContentGroup] = []
     for group in groups:
+        if selected is not None and group.id not in selected:
+            would_skip.append(group)
+            continue
         review_path = reviews_dir(output_root, group.track) / f"{group.id}.json"
         if should_skip_group(
             group,
             review_path,
-            force=force,
+            force=force or selected is not None,
             input_roots=input_roots,
         ):
             would_skip.append(group)

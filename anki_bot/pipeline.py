@@ -271,6 +271,13 @@ def _print_run_summary(reviews: list[QuestionReview]) -> None:
     print(format_run_total(usage_records, lecture_hours=lecture_hours))
 
 
+def _selected_ids(only_ids: set[str] | frozenset[str] | None) -> frozenset[str] | None:
+    if not only_ids:
+        return None
+    selected = frozenset(part.strip() for part in only_ids if part and part.strip())
+    return selected or None
+
+
 def process_path(
     input_path: Path,
     output_root: Path,
@@ -281,8 +288,14 @@ def process_path(
     deck_name: str = "HUB::anki-bot",  # noqa: ARG001 - kept for CLI compatibility
     fixture: Path | None = None,
     force: bool = False,
+    only_ids: set[str] | frozenset[str] | None = None,
 ) -> list[QuestionReview]:
-    """Process all question groups under input_path."""
+    """Process all question groups under input_path.
+
+    ``only_ids`` reprocesses those group ids even when fingerprints match,
+    and leaves every other group untouched. Packs are still rebuilt from
+    every review JSON on disk.
+    """
     groups, input_roots, drive_warnings = discover_with_drive(input_path)
     for warning in drive_warnings:
         print(f"Warning: {warning}")
@@ -292,25 +305,37 @@ def process_path(
             "(expected PDF qbanks, PNG/JPG screenshots, or .html lecture files)"
         )
 
+    selected = _selected_ids(only_ids)
+    if selected is not None:
+        known = {group.id for group in groups}
+        print("Reprocessing only: " + ", ".join(sorted(selected)))
+        missing = sorted(selected - known)
+        for group_id in missing:
+            print(f"Warning: group not found: {group_id}")
+
     mark_run_started()
     ran: list[RunLogEntry] = []
     ignored: list[RunLogEntry] = []
     processed: list[QuestionReview] = []
 
     for group in groups:
-        if run_budget_exceeded():
-            print("Run budget reached; stopping new groups (packs will still rebuild).")
-            break
-
         review_path = reviews_dir(output_root, group.track) / f"{group.id}.json"
         kind_label = group.kind.value
         summary = _source_summary(group)
+
+        if selected is not None and group.id not in selected:
+            ignored.append(RunLogEntry(kind_label, group.id, summary))
+            continue
+
+        if run_budget_exceeded():
+            print("Run budget reached; stopping new groups (packs will still rebuild).")
+            break
 
         if (
             should_skip_group(
                 group,
                 review_path,
-                force=force,
+                force=force or selected is not None,
                 input_roots=input_roots,
             )
             and fixture is None
