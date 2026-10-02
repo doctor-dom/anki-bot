@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+from typing import NoReturn
 
 import httpx
 from google import genai
@@ -154,19 +155,55 @@ def _gemini_http_timeout_ms() -> int | None:
     return int(float(raw) * 1000)
 
 
+def _http_options() -> types.HttpOptions:
+    """Timeout plus SDK retries for 408/429/5xx and read timeouts.
+
+    Passing ``HttpOptions`` without ``retry_options`` disables retries
+    (``retry_options=None`` means a single attempt). NightBot was failing
+    fast on quota errors because of that.
+    """
+    kwargs: dict = {"retry_options": types.HttpRetryOptions()}
+    timeout_ms = _gemini_http_timeout_ms()
+    if timeout_ms is not None:
+        kwargs["timeout"] = timeout_ms
+    return types.HttpOptions(**kwargs)
+
+
 def get_client() -> genai.Client:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError(
             "GEMINI_API_KEY is not set. Copy .env.example to .env and add your key."
         )
-    timeout_ms = _gemini_http_timeout_ms()
-    if timeout_ms is not None:
-        return genai.Client(
-            api_key=api_key,
-            http_options=types.HttpOptions(timeout=timeout_ms),
-        )
-    return genai.Client(api_key=api_key)
+    return genai.Client(api_key=api_key, http_options=_http_options())
+
+
+def _api_error_code(exc: BaseException) -> int | None:
+    """HTTP status from a GenAI ``APIError``.
+
+    The SDK stores the status on ``code``. Older call sites used
+    ``status_code``, which ``ClientError`` does not define.
+    """
+    for attr in ("code", "status_code"):
+        raw = getattr(exc, attr, None)
+        if raw is None:
+            continue
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _raise_gemini_api_error(exc: genai_errors.APIError, model_name: str) -> NoReturn:
+    code = _api_error_code(exc)
+    if code == 404 and "gemini-2.5-pro" in str(exc):
+        raise RuntimeError(
+            f"Model {model_name!r} is not available on your API key. "
+            f"Try {FLASH_MODEL!r} or {PRO_MODEL!r}."
+        ) from exc
+    label = str(code) if code is not None else "unknown"
+    raise RuntimeError(f"Gemini API error ({label}): {exc}") from exc
 
 
 def _resolve_requested(model: str | None) -> str:
@@ -299,13 +336,8 @@ def _call_gemini(
             "Check your internet connection, VPN, firewall, or try another network. "
             "Test in PowerShell: Resolve-DnsName generativelanguage.googleapis.com"
         ) from exc
-    except genai_errors.ClientError as exc:
-        if exc.status_code == 404 and "gemini-2.5-pro" in str(exc):
-            raise RuntimeError(
-                f"Model {model_name!r} is not available on your API key. "
-                f"Try {FLASH_MODEL!r} or {PRO_MODEL!r}."
-            ) from exc
-        raise RuntimeError(f"Gemini API error ({exc.status_code}): {exc}") from exc
+    except genai_errors.APIError as exc:
+        _raise_gemini_api_error(exc, model_name)
 
     raw = response.text or ""
     try:
