@@ -73,6 +73,30 @@ def test_configure_tesseract_windows_path(tmp_path: Path, monkeypatch) -> None:
     assert inner.tesseract_cmd == str(fake)
 
 
+def test_prepare_png_keep_ocr_without_mcq_shape(tmp_path: Path, monkeypatch) -> None:
+    img = tmp_path / "q1.png"
+    img.write_bytes(b"fake")
+    long_text = "Stem and choices without standard markers.\n" + ("word " * 50)
+    monkeypatch.setenv("ANKI_BOT_PNG_KEEP_OCR", "1")
+    monkeypatch.setattr("anki_bot.image_ocr.tesseract_available", lambda: True)
+    monkeypatch.setattr("anki_bot.image_ocr.ocr_image_text", lambda _path: long_text)
+    result = prepare_png_question_input([img])
+    assert result.text.strip()
+    assert not result.vision_paths
+
+
+def test_prepare_png_keep_ocr_off_still_full_vision(tmp_path: Path, monkeypatch) -> None:
+    img = tmp_path / "q1.png"
+    img.write_bytes(b"fake")
+    long_text = "Stem without MCQ markers.\n" + ("word " * 50)
+    monkeypatch.delenv("ANKI_BOT_PNG_KEEP_OCR", raising=False)
+    monkeypatch.setattr("anki_bot.image_ocr.tesseract_available", lambda: True)
+    monkeypatch.setattr("anki_bot.image_ocr.ocr_image_text", lambda _path: long_text)
+    result = prepare_png_question_input([img])
+    assert result.used_vision
+    assert not result.text.strip()
+
+
 def test_prepare_png_missing_tesseract_auto_vision(tmp_path: Path, monkeypatch) -> None:
     img = tmp_path / "q1.png"
     img.write_bytes(b"fake")

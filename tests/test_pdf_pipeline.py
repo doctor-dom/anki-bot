@@ -19,8 +19,8 @@ def test_process_two_abp_pdfs_builds_qbank_packs(tmp_path: Path) -> None:
         fixture=QUESTION_FIXTURE,
     )
     assert len(reviews) == 2
-    assert (output / "abp" / "ankideck" / "qbank-abp2.apkg").exists()
-    assert (output / "abp" / "ankideck" / "qbank-abp.apkg").exists()
+    assert (output / "abp" / "ankideck" / "all-abp.apkg").exists()
+    assert (output / "abp" / "abp-qbank-2" / "ankideck" / "abp-qbank-2.apkg").exists()
     for review in reviews:
         assert review.source_pdfs
         assert review.track == "abp"

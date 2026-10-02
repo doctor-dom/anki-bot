@@ -49,14 +49,19 @@ jobs:
           GEMINI_MODEL: auto
           ANKI_BOT_PDF_MODE: auto
           ANKI_BOT_PNG_MODE: auto
+          ANKI_BOT_PNG_KEEP_OCR: "1"
+          ANKI_BOT_GEMINI_TIMEOUT_S: "180"
+          ANKI_BOT_RUN_BUDGET_MINUTES: "300"
+          PYTHONUNBUFFERED: "1"
         run: |
           set -o pipefail
           anki-bot run 2>&1 | tee run.log
 
       - name: Push output to Google Drive
+        if: always()
         env:
           RCLONE_REMOTE: gdrive
-        run: rclone copy ./output "${RCLONE_REMOTE}:anki-bot/output"
+        run: rclone sync ./output "${RCLONE_REMOTE}:anki-bot/output"
 
       - name: Job summary
         if: always()
