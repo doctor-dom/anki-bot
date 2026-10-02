@@ -17,9 +17,17 @@ on:
           reprocess the rest of the library). Overrides force when set.
         type: string
         default: ""
+  # One-shot: a push that adds .github/rerun-failed-questions.txt and includes
+  # [rerun-five] in the commit message rebuilds just those ids. workflow_dispatch
+  # is preferred; this exists when the caller cannot call the dispatch API.
+  push:
+    branches: [master]
+    paths:
+      - ".github/rerun-failed-questions.txt"
 
 jobs:
   run:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[rerun-five]')
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -69,7 +77,11 @@ jobs:
         run: |
           set -o pipefail
           EXTRA=()
-          if [ -n "$NIGHTBOT_ONLY" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ -f .github/rerun-failed-questions.txt ]; then
+            ONLY_LINE=$(tr -d '\r' < .github/rerun-failed-questions.txt)
+            EXTRA+=(--only "$ONLY_LINE")
+            echo "Reprocessing only: $ONLY_LINE"
+          elif [ -n "$NIGHTBOT_ONLY" ]; then
             EXTRA+=(--only "$NIGHTBOT_ONLY")
             echo "Reprocessing only: $NIGHTBOT_ONLY"
           elif [ "$NIGHTBOT_FORCE" = "true" ]; then
