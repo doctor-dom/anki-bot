@@ -23,8 +23,10 @@ Set-Location $RepoRoot
 
 switch ($Action) {
     "pull" {
-        New-Item -ItemType Directory -Force -Path "output" | Out-Null
+        New-Item -ItemType Directory -Force -Path "input", "output" | Out-Null
+        rclone copy "${Remote}:anki-bot/input" ".\input"
         rclone copy "${Remote}:anki-bot/output" ".\output"
+        Write-Host "Pulled Drive input to $RepoRoot\input"
         Write-Host "Pulled Drive output to $RepoRoot\output"
     }
     "push-input" {

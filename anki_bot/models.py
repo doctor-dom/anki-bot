@@ -112,6 +112,7 @@ class QuestionReview(BaseModel):
     source_images: list[str] = Field(default_factory=list)
     source_html: list[str] = Field(default_factory=list)
     source_pdfs: list[str] = Field(default_factory=list)
+    source_ocr: str = ""
     processed_at: str = ""
     topic: str = ""
     track: str = ""

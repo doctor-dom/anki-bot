@@ -13,6 +13,7 @@ from anki_bot.gemini_review import DEFAULT_MODEL
 from anki_bot.paths import DEFAULT_OUTPUT_DIRNAME, resolve_default_input, resolve_output_root
 from anki_bot.estimate import estimate_path, format_estimate_report
 from anki_bot.drive_sync import (
+    default_rclone_pull_input,
     default_rclone_pull_output,
     default_rclone_push_input,
     default_rclone_push_output,
@@ -217,7 +218,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     estimate.set_defaults(func=cmd_estimate)
 
-    pull = sub.add_parser("pull", help="Copy Google Drive anki-bot/output to local output/")
+    pull = sub.add_parser(
+        "pull",
+        help="Copy Google Drive anki-bot/input and output to local input/ and output/",
+    )
     pull.set_defaults(func=cmd_pull)
 
     push_in = sub.add_parser(
@@ -255,10 +259,15 @@ def cmd_pull(args: argparse.Namespace) -> int:  # noqa: ARG001
     if not _require_rclone():
         return 1
     root = _repo_root()
+    input_dir = root / "input"
     output = root / "output"
-    if not rclone_copy(default_rclone_pull_output(), output):
-        print("Error: rclone pull failed.", file=sys.stderr)
+    if not rclone_copy(default_rclone_pull_input(), input_dir):
+        print("Error: rclone pull failed for input.", file=sys.stderr)
         return 1
+    if not rclone_copy(default_rclone_pull_output(), output):
+        print("Error: rclone pull failed for output.", file=sys.stderr)
+        return 1
+    print(f"Pulled Drive input to {input_dir}")
     print(f"Pulled Drive output to {output}")
     return 0
 

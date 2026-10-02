@@ -175,7 +175,13 @@ def test_board_category_aliases() -> None:
         "neonatology": "10-neonatology",
         "nephrology": "11-nephrology",
         "neurology": "12-neurology",
+        "vsd": "03-cardiology-pulmonology",
+        "asd": "03-cardiology-pulmonology",
+        "hocm": "03-cardiology-pulmonology",
+        "milestones": "08-preventative-pediatrics",
+        "gono": "01-adolescent-behavioral",
         "unmapped-zebra": "other",
+        "abp-boards-study-sheets": "other",
     }
     for slug, key in expected.items():
         assert match_board_category(slug).key == key, slug

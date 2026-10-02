@@ -86,6 +86,27 @@ def png_input_mode() -> PngInputMode:
         return PngInputMode.AUTO
 
 
+def plan_png_gemini_inputs(
+    images: list[Path],
+    png_result: PngPrepareResult,
+    *,
+    force_vision: bool = False,
+) -> tuple[bool, list[Path]]:
+    """Return ``(include_ocr_text_in_prompt, image_paths_to_attach)`` for Gemini."""
+    if force_vision:
+        return False, list(images)
+    mode = png_input_mode()
+    if mode == PngInputMode.VISION:
+        return False, list(images)
+    if mode == PngInputMode.TEXT:
+        send_text = bool(png_result.text.strip())
+        if png_result.vision_paths:
+            return send_text, list(png_result.vision_paths)
+        return send_text, []
+    # AUTO: Tesseract output is archived under output/<track>/ocr/; Gemini reads the PNGs.
+    return False, list(images)
+
+
 def tesseract_available() -> bool:
     if not configure_tesseract():
         return False

@@ -222,7 +222,7 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 2. VPN if needed → venv active → `anki-bot run` or `anki-bot process input` (or a subfolder). **`run`** is the daily “process everything new under `input/`” command (same flags as `process`).
 
-3. Per question: `output/<track>/reviews/<id>.json` (no per-question HTML).
+3. Per question: `output/<track>/reviews/<id>.json` (no per-question HTML). Raw Tesseract OCR from PNGs is saved under `output/<track>/ocr/<id>.txt` and `ocr/<id>.json`; each review JSON includes `source_ocr` pointing at the metadata file when PNGs were processed.
 
 4. Import **`output/<track>/ankideck/all-<track>.apkg`**, a board-category deck (12 pediatric buckets such as `06-endocrinology-metabolic-genetics`), or a folder deck for the input batch. Category HTML is `output/<track>/topics/<category>-high-yield.html`.
 
@@ -324,12 +324,13 @@ Those stay in the cloud until you copy them.
 From the repo root, with rclone remote `gdrive` already set up:
 
 ```powershell
+rclone copy gdrive:anki-bot/input .\input
 rclone copy gdrive:anki-bot/output .\output
 ```
 
-Or: `anki-bot pull` or `.\scripts\drive-sync.ps1 pull`.
+Or: `anki-bot pull` or `.\scripts\drive-sync.ps1 pull` (both folders in one step).
 
-rclone downloads Drive’s `output` tree into the repo `output/` folder. **Copy** updates/adds files; it does **not** delete extra local files (that would be `sync`). After this, paths look exactly like a local `anki-bot run`.
+rclone downloads Drive’s `input` and `output` trees into the repo `input/` and `output/` folders. **Copy** updates/adds files; it does **not** delete extra local files (that would be `sync`). After this, paths look exactly like a local `anki-bot run`.
 
 ### Then Anki
 

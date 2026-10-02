@@ -124,9 +124,23 @@ def render_figure_html(basenames: list[str], *, media_prefix: str) -> str:
     return "".join(blocks)
 
 
+def _question_has_minimum_line(review: QuestionReview) -> bool:
+    if review.high_yield:
+        return True
+    if review.correct_pearl.strip() or review.item.correct_text.strip():
+        return True
+    return bool(review.item.stem_gist.strip())
+
+
 def render_high_yield_item_html(review: QuestionReview) -> str:
     """One clustered row for the running list."""
     if not review.high_yield:
+        if review.kind == ContentKind.QUESTION and _question_has_minimum_line(review):
+            from anki_bot.cards import minimum_high_yield_text
+
+            line = minimum_high_yield_text(review)
+            if line:
+                return f'<div class="hy-item">{_span(line, "hy-topic")}</div>'
         return ""
 
     parts: list[str] = []
@@ -181,8 +195,10 @@ def render_high_yield_page(
     group_open = False
 
     for review in reviews:
-        if not review.high_yield and not (include_figures and media_map.get(review.id)):
-            continue
+        has_figures = include_figures and bool(media_map.get(review.id))
+        if not review.high_yield and not has_figures:
+            if review.kind != ContentKind.QUESTION or not _question_has_minimum_line(review):
+                continue
 
         if group_by_topic and review.kind == ContentKind.QUESTION:
             topic_key = qbank_sort_key(review)[0]

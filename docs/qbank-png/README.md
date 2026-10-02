@@ -47,7 +47,7 @@ If the same id appears in more than one folder, each id is prefixed with the par
 
 1. Discover groups. Skip a group when `output/<track>/reviews/<id>.json` already matches the source fingerprint, unless `--force`.
 2. `prepare_png_question_input` (`ANKI_BOT_PNG_MODE`, default `auto`).
-3. `review_question` sends OCR text and/or image parts to Gemini with `prompts/tutor.md`. Card budget is 1–5 (hard max 5). `ANKI_BOT_BULK_QBANK=1` caps at 3.
+3. `review_question` runs Tesseract for archival (`output/<track>/ocr/`), then sends **PNG image parts** to Gemini in `auto` mode (not OCR text). Card budget is 1–5 (hard max 5). `ANKI_BOT_BULK_QBANK=1` caps at 3.
 4. `filter_valid_cards`, attach fingerprint, set `track` from the group.
 5. Write `output/<track>/reviews/<id>.json`. Copy kept images into `output/<track>/media/`.
 6. Load every review JSON and write the packs below.
@@ -60,9 +60,11 @@ If the same id appears in more than one folder, each id is prefixed with the par
 |------|----------|
 | `vision` | Send every image. No OCR. |
 | `text` | OCR only. Missing Tesseract or empty OCR raises. |
-| `auto` | OCR, then keep text, mix text with selected vision pages, or fall back to full vision. |
+| `auto` | OCR every page into `output/<track>/ocr/`; Gemini always receives the PNG bytes (Flash for text screenshots, Pro when a figure page is present). |
 
-`auto` per image:
+`prepare_png_question_input` still classifies pages for logging and hybrid edge cases; `auto` does **not** substitute OCR text for Gemini.
+
+`auto` per image (OCR archive + figure detection):
 
 - OCR failure, or OCR shorter than 80 characters: that page goes to vision.
 - Figure-like page (filename matches `cxr`, `xray`, `ecg`, `rash`, `figure`, `scan`, `graph`, …, or mean RGB stddev ≥ `ANKI_BOT_FIGURE_COLOR_VARIANCE`, default 55) **and** (sparse OCR or a figure-like filename): that page stays on vision. Any partial OCR text is still included, labeled `(OCR partial)`.
@@ -80,11 +82,10 @@ Missing Tesseract in `auto` warns once and uses full vision. Set `ANKI_BOT_TESSE
 
 | Prepared input | Model |
 |----------------|-------|
-| OCR text only | Flash Lite |
-| OCR text plus non-figure vision pages | Flash Lite |
-| OCR text plus a figure vision page | Pro |
-| Vision only, any figure page | Pro |
-| Vision only, text screenshots | Flash |
+| `PNG_MODE=text`, OCR text only | Flash Lite |
+| `PNG_MODE=text`, OCR plus figure vision page(s) | Flash Lite or Pro |
+| `PNG_MODE=auto` or `vision`, text screenshots | Flash |
+| `PNG_MODE=auto` or `vision`, any figure page | Pro |
 
 `ANKI_BOT_ESCALATE_PRO=1` retries on Pro with `force_vision` when item confidence is below 0.85 or a warning mentions a missing explanation or an ambiguous correct answer. Vision uploads are downscaled to `ANKI_BOT_MAX_IMAGE_SIDE` (default 1600).
 
@@ -173,6 +174,8 @@ Images are copied once to `output/<track>/media/<review-id>-<index>.<ext>`.
 The stem cloze (or the first card) gets `<img src="<basename>">` in Extra. The `.apkg` embeds those files. HTML uses `media/<basename>` relative to the HTML file, except files whose parent directory is `reviews`, which use `../media/`. Topic HTML lives in `topics/` and folder HTML lives in the batch folder, so those `media/` links do not resolve to `output/<track>/media/`. Anki import does not depend on that relative URL.
 
 ## Rebuild without Gemini
+
+When a question is processed from PNGs, local OCR runs before Gemini. The combined text is written to `output/<track>/ocr/<id>.txt` (plain text) and `output/<track>/ocr/<id>.json` (text plus `used_ocr`, vision page paths, warnings). The review JSON field `source_ocr` is set to `ocr/<id>.json` so edits to `reviews/<id>.json` can reopen the original OCR.
 
 Edit pearls or cards in `output/<track>/reviews/<id>.json`, then:
 

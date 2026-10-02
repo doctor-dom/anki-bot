@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 from anki_bot.apkg import write_apkg
 from anki_bot.card_budget import budget_for_group
-from anki_bot.cards import filter_valid_cards
+from anki_bot.cards import ensure_minimum_yield, filter_valid_cards
 from anki_bot.discover import ContentGroup
 from anki_bot.drive_sync import discover_with_drive
 from anki_bot.gemini_review import review_content, review_from_fixture
@@ -131,9 +131,10 @@ def _process_group(
     if fixture:
         review = review_from_fixture(group, fixture, budget=budget)
     else:
-        review = review_content(group, model=model, budget=budget)
+        review = review_content(group, model=model, budget=budget, output_root=output_root)
 
     review = filter_valid_cards(review, max_cards=max_cards)
+    review = ensure_minimum_yield(review, max_cards=max_cards)
     review = attach_fingerprint(review, group, input_roots=input_roots)
     if not review.track:
         review = review.model_copy(update={"track": group.track})
@@ -238,6 +239,10 @@ def _write_output_packs(
 
     for pack in packs:
         pack_reviews = reviews_for_pack(all_reviews, pack)
+        pack_reviews = [
+            ensure_minimum_yield(r) if r.kind == ContentKind.QUESTION else r
+            for r in pack_reviews
+        ]
         if not pack_reviews and pack.pack_kind not in (PackKind.LECTURE, PackKind.LECTURE_COMPILED):
             continue
         media_by = _sync_pack_media(output_root, pack, pack_reviews)
@@ -356,6 +361,7 @@ def build_from_reviews(
     for path in _review_json_paths_for_build(reviews_path, output_root):
         review = load_review(path)
         review = filter_valid_cards(review, max_cards=max_cards)
+        review = ensure_minimum_yield(review, max_cards=max_cards)
         save_review(review, path)
         sync_media_for_reviews([review], track_media_dir(output_root, review.track))
         all_reviews.append(review)
@@ -366,6 +372,10 @@ def build_from_reviews(
         prune_stale_topic_files(output_root, packs)
     for pack in packs:
         pack_reviews = reviews_for_pack(all_reviews, pack)
+        pack_reviews = [
+            ensure_minimum_yield(r) if r.kind == ContentKind.QUESTION else r
+            for r in pack_reviews
+        ]
         if not pack_reviews and pack.pack_kind not in (PackKind.LECTURE, PackKind.LECTURE_COMPILED):
             continue
         media_by = _sync_pack_media(output_root, pack, pack_reviews)

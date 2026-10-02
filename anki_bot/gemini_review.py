@@ -47,18 +47,22 @@ TUTOR_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "tutor.
 LECTURE_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "lecture.md"
 
 ACCURACY_ADDENDUM = """
-## Accuracy over coverage
+## Accuracy and minimum yield
 
-Prefer accuracy over hitting the card count range. Never invent facts not shown in the source.
-Omit unclear facts. One atomic grounded cloze per card. Do not pad to reach the target range.
-Fewer excellent cards beats filling the quota.
+Never invent facts not shown in the source. Omit unclear facts.
+
+When the correct answer is visible, you must still return:
+- at least one short high_yield phrase (pathognomonic clue, diagnosis, test, or treatment from the page), OR the question stem gist if no explanation is shown;
+- at least one short cloze card for that same grounded material.
+
+Use short phrases (not sentences) for high_yield and cards. Do not pad with extra textbook facts.
 """
 
 BULK_QBANK_ADDENDUM = """
 ## Bulk qbank mode
 
-Keep output compact: at most 3 cloze cards, concise distractors, minimal high_yield rows.
-Do not pad output to hit card targets.
+Keep output compact: at most 3 short-phrase cloze cards and matching high_yield rows.
+Still emit the minimum one phrase and one cloze when the correct answer is visible.
 """
 
 QBANK_HTML_ADDENDUM = """
@@ -323,10 +327,12 @@ def _attach_metadata(
     topic: str = "",
     track: str = "",
     input_method: str = "",
+    source_ocr: str = "",
 ) -> QuestionReview:
     updates: dict = {
         "topic": topic,
         "track": track,
+        "source_ocr": source_ocr,
         "card_budget": CardBudgetInfo(
             soft_min=budget.soft_min,
             soft_max=budget.soft_max,
@@ -380,12 +386,18 @@ def _pick_question_model(
     raw = _resolve_requested(model)
     if not _is_auto_model(raw):
         return ModelChoice(model=normalize_model(raw), reasons=(), auto_selected=False)
-    ocr_text_only = bool(
-        png_result
-        and png_result.text.strip()
-        and not png_result.vision_paths
-    )
-    vision_paths = list(png_result.vision_paths) if png_result else list(image_paths)
+    from anki_bot.image_ocr import plan_png_gemini_inputs, png_input_mode, PngInputMode
+
+    if png_result and image_paths:
+        _send_ocr, vision_paths = plan_png_gemini_inputs(image_paths, png_result)
+        ocr_text_only = (
+            png_input_mode() == PngInputMode.TEXT
+            and _send_ocr
+            and not vision_paths
+        )
+    else:
+        ocr_text_only = False
+        vision_paths = list(image_paths)
     return choose_model_for_question(
         pdf_paths=pdf_paths,
         image_paths=image_paths,
@@ -441,12 +453,18 @@ def _run_question_gemini(
         if png_result is None or force_vision:
             png_result = prepare_png_question_input(images, force_vision=force_vision)
         extra_warnings.extend(png_result.warnings)
-        if png_result.text.strip() and not force_vision:
+        from anki_bot.image_ocr import plan_png_gemini_inputs
+
+        send_ocr_text, attach_images = plan_png_gemini_inputs(
+            images,
+            png_result,
+            force_vision=force_vision,
+        )
+        if send_ocr_text:
             dynamic.append(
                 f"\n\n--- QUESTION TEXT (extracted from PNG OCR) ---\n{png_result.text}\n--- END QUESTION TEXT ---"
             )
-        vision_paths = list(png_result.vision_paths) if not force_vision else images
-        for path in vision_paths:
+        for path in attach_images:
             dynamic.append(_image_part(path))
 
     parsed, usage = _call_gemini(
@@ -468,6 +486,7 @@ def review_question(
     model: str | None = None,
     budget: CardBudget | None = None,
     track: str = "",
+    output_root: Path | None = None,
     client: genai.Client | None = None,
 ) -> QuestionReview:
     """Send PDF and/or screenshot sources to Gemini and return structured review."""
@@ -482,8 +501,19 @@ def review_question(
     card_budget = budget or budget_for_question()
 
     png_result: PngPrepareResult | None = None
+    source_ocr = ""
     if images:
         png_result = prepare_png_question_input(images)
+        if output_root is not None:
+            from anki_bot.ocr_store import write_png_ocr_artifact
+
+            source_ocr = write_png_ocr_artifact(
+                output_root,
+                track,
+                question_id,
+                png_result,
+                source_images=[str(p.resolve()) for p in images],
+            )
 
     choice = _pick_question_model(
         pdf_paths=pdfs,
@@ -535,6 +565,7 @@ def review_question(
         model_name=model_name,
         track=track,
         input_method=input_method,
+        source_ocr=source_ocr,
     )
 
 
@@ -701,6 +732,7 @@ def review_content(
     *,
     model: str | None = None,
     budget: CardBudget | None = None,
+    output_root: Path | None = None,
     client: genai.Client | None = None,
 ) -> QuestionReview:
     if group.kind == ContentKind.LECTURE:
@@ -728,6 +760,7 @@ def review_content(
         model=model,
         budget=budget,
         track=group.track,
+        output_root=output_root,
         client=client,
     )
 

@@ -99,6 +99,11 @@ def default_rclone_pull_output() -> str:
     return f"{remote}:anki-bot/output"
 
 
+def default_rclone_pull_input() -> str:
+    remote = os.getenv("ANKI_BOT_RCLONE_REMOTE", "gdrive")
+    return f"{remote}:anki-bot/input"
+
+
 def default_rclone_push_output() -> str:
     remote = os.getenv("ANKI_BOT_RCLONE_REMOTE", "gdrive")
     return f"{remote}:anki-bot/output"
