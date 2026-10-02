@@ -184,15 +184,13 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 | **Gemini role** | Lecture text → pearls + clozes (15–50 cards by duration) | OCR → stem, distractors, pearls + clozes (1–5 cards) |
 
-| **Review JSON** | `output/<track>/reviews/<id>.json` | Same (e.g. `output/abp/reviews/12-endocrine.json`) |
+| **Review JSON (internal)** | `output/<track>/reviews/<id>.json` | Same (e.g. `output/abp/reviews/12-endocrine.json`) |
 
-| **Color-coded preview** | `output/<track>/reviews/<id>.html` | Same |
-
-| **Combined color-coded list** | `output/<track>/<short-id>-high-yield.html` (pearl-only); **`output/<track>/<short-id>-illustrated.html`** (pearls + slide `<img>`) | Run: `qbank-abp<N>-high-yield.html`; compiled: `qbank-abp-high-yield.html` (figures + topic groups) |
+| **Color-coded HTML** | `output/<track>/<short-id>-high-yield.html`; **`output/<track>/<short-id>-illustrated.html`** (lectures) | **All track:** `all-<track>-high-yield.html`; **topic:** `topics/<topic>-high-yield.html`; **batch folder:** `<folder>/<folder>-high-yield.html` |
 | **All lectures in track** | **`output/<track>/lectures-<track>-high-yield.html`** (pearls + images) | — |
 | **Shared media** | `output/<track>/media/` (copied PNGs/JPGs; referenced from HTML and Anki) | Same |
 
-| **Anki deck** | `output/<track>/ankideck/<short-id>.apkg` | Run: `qbank-abp<N>.apkg`; **compiled:** `qbank-abp.apkg` |
+| **Anki deck** | `output/<track>/ankideck/<short-id>.apkg` | **All track:** `all-<track>.apkg`; **topic:** `ankideck/<topic>.apkg`; **batch folder:** `<folder>/ankideck/<folder>.apkg` |
 
 | **Track** | First folder under `input/` (e.g. `abp`, `endo`); files directly in `input/` → `misc` | Same |
 
@@ -210,7 +208,7 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 3. VPN if needed → venv active → `anki-bot process input\your-lecture.html`.
 
-4. Review `output/<track>/reviews/<id>.html`; edit the matching `.json`.
+4. Open the track high-yield HTML; edit the matching `reviews/<id>.json` if needed.
 
 5. Import `output/<track>/ankideck/<short-id>.apkg` into Anki (stem/main cloze **Extra** includes packaged figures when inputs had images). Open `-high-yield.html` or `-illustrated.html` in that track folder; compiled qbank lists use filename topics (`12-endocrine`, …) for sort order and section headings.
 
@@ -224,9 +222,9 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 2. VPN if needed → venv active → `anki-bot run` or `anki-bot process input` (or a subfolder). **`run`** is the daily “process everything new under `input/`” command (same flags as `process`).
 
-3. Per question: `output/<track>/reviews/<id>.json` and `.html`.
+3. Per question: `output/<track>/reviews/<id>.json` (no per-question HTML).
 
-4. Run pack: `output/<track>/ankideck/qbank-abp<N>.apkg`. **Compiled (re-import this):** `output/<track>/ankideck/qbank-abp.apkg`.
+4. Import **`output/<track>/ankideck/all-<track>.apkg`**, or a topic/folder deck under `topics/` or the input batch folder.
 
 5. Edit JSON → `anki-bot build-apkg output` or `output\<track>\reviews`.
 
@@ -244,7 +242,7 @@ Use this when a **separate tool** already produced color-coded HTML for each que
 
 2. `anki-bot run` — text is extracted locally (no vision); Gemini builds clozes using the [question prompt](prompts/tutor.md) and preserves `hy-*` spans in cards.
 
-3. Outputs match Workflow B: `output/<track>/reviews/<id>.json`, `output/<track>/ankideck/qbank-<track>.apkg`.
+3. Outputs match Workflow B: `output/<track>/reviews/<id>.json`, `output/<track>/ankideck/all-<track>.apkg`.
 
 
 
@@ -335,7 +333,7 @@ rclone downloads Drive’s `output` tree into the repo `output/` folder. **Copy*
 
 ### Then Anki
 
-File → Import → `output\ankideck\qbank-abp.apkg` (or the lecture/run `.apkg` you want). Same import path as today; the files just arrived from Drive.
+File → Import → `output\abp\ankideck\all-abp.apkg` (or a topic/folder deck). Same import path as today; the files just arrived from Drive.
 
 If you use **Drive for Desktop**, you can skip rclone and open the mirrored `anki-bot\output\ankideck` folder instead.
 
@@ -610,7 +608,9 @@ See [Where outputs go](#where-outputs-go) and the [workflows table](#workflows--
 
 - `input/abp/infectious-disease/…` → `output/abp/ankideck/infectious-disease.apkg`, `output/abp/infectious-disease-high-yield.html`
 
-- 12 ABP question groups in one run → `output/abp/ankideck/qbank-abp12.apkg` + `output/abp/ankideck/qbank-abp.apkg`
+- 12 ABP question groups in one run → `output/abp/ankideck/all-abp.apkg` (grows each night) plus topic/folder decks
+
+**Rebuild packs from existing review JSON (no Gemini):** pull Drive `output/`, then `python scripts/rebuild_output_packs.py output`, then `rclone sync ./output gdrive:anki-bot/output`.
 
 
 

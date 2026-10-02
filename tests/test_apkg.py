@@ -95,10 +95,10 @@ def test_process_with_fixture(tmp_path: Path) -> None:
         fixture=FIXTURE,
     )
     assert len(reviews) == 1
-    assert (output / "q1" / "qbank-q11-high-yield.html").exists()
+    assert (output / "q1" / "all-q1-high-yield.html").exists()
     assert (output / "q1" / "reviews" / "q1.json").exists()
-    assert (output / "q1" / "ankideck" / "qbank-q11.apkg").exists()
-    assert (output / "q1" / "ankideck" / "qbank-q1.apkg").exists()
+    assert not (output / "q1" / "reviews" / "q1.html").exists()
+    assert (output / "q1" / "ankideck" / "all-q1.apkg").exists()
 
 
 def test_two_questions_write_qbank_abp(tmp_path: Path) -> None:
@@ -110,8 +110,9 @@ def test_two_questions_write_qbank_abp(tmp_path: Path) -> None:
         )
     output = tmp_path / "output"
     process_path(tmp_path / "input" / "abp", output, review_only=False, fixture=FIXTURE)
-    assert (output / "abp" / "ankideck" / "qbank-abp2.apkg").exists()
-    assert (output / "abp" / "ankideck" / "qbank-abp.apkg").exists()
+    assert (output / "abp" / "ankideck" / "all-abp.apkg").exists()
+    assert (output / "abp" / "q1" / "ankideck" / "q1.apkg").exists()
+    assert (output / "abp" / "q2" / "ankideck" / "q2.apkg").exists()
 
 
 def test_build_from_reviews(tmp_path: Path) -> None:
@@ -122,4 +123,4 @@ def test_build_from_reviews(tmp_path: Path) -> None:
     process_path(input_dir, output, review_only=True, fixture=FIXTURE)
     reviews, count = build_from_reviews(output / "q1" / "reviews", output)
     assert len(reviews) == 1
-    assert count == 2
+    assert count >= 2

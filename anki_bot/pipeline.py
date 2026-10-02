@@ -15,17 +15,19 @@ from anki_bot.discover import ContentGroup
 from anki_bot.drive_sync import discover_with_drive
 from anki_bot.gemini_review import review_content, review_from_fixture
 from anki_bot.html_extract import combine_lecture_html
-from anki_bot.html_render import write_high_yield_html, write_illustrated_html, write_item_preview
+from anki_bot.html_render import write_high_yield_html, write_illustrated_html
 from anki_bot.media import sync_media_for_reviews, track_media_dir
 from anki_bot.models import ContentKind, QuestionReview
 from anki_bot.outputs import (
     PackKind,
+    cleanup_legacy_qbank_artifacts,
     iter_review_json_paths,
     packs_for_reviews,
     reviews_dir,
     reviews_for_pack,
 )
 from anki_bot.processed import attach_fingerprint, should_skip_group
+from anki_bot.run_budget import mark_run_started, run_budget_exceeded
 from anki_bot.usage import UsageRecord, format_run_total, format_usage_line
 
 load_dotenv()
@@ -138,8 +140,7 @@ def _process_group(
     track_dir = reviews_dir(output_root, group.track)
     review_json = track_dir / f"{group.id}.json"
     save_review(review, review_json)
-    media_by = sync_media_for_reviews([review], track_media_dir(output_root, group.track))
-    write_item_preview(review, track_dir / f"{group.id}.html", media_by_review=media_by)
+    sync_media_for_reviews([review], track_media_dir(output_root, group.track))
 
     usage = _usage_record(review)
     if usage is not None:
@@ -185,6 +186,15 @@ def _write_pack_artifacts(
             media_by_review=media_by,
         )
         written.append(pack.html_path)
+    elif pack.pack_kind == PackKind.QBANK_TOPIC:
+        write_high_yield_html(
+            pack_reviews,
+            pack.html_path,
+            group_by_topic=False,
+            include_figures=True,
+            media_by_review=media_by,
+        )
+        written.append(pack.html_path)
     else:
         write_high_yield_html(
             pack_reviews,
@@ -216,18 +226,14 @@ def _write_output_packs(
     this_run_reviews: list[QuestionReview] | None = None,
 ) -> list[Path]:
     written: list[Path] = []
-    this_run_ids = frozenset(r.id for r in (this_run_reviews or []))
+    cleanup_legacy_qbank_artifacts(output_root)
 
     for pack in packs_for_reviews(
         output_root,
         all_reviews,
         this_run_reviews=this_run_reviews,
     ):
-        pack_reviews = reviews_for_pack(
-            all_reviews,
-            pack,
-            this_run_ids=this_run_ids if pack.pack_kind == PackKind.QBANK_RUN else None,
-        )
+        pack_reviews = reviews_for_pack(all_reviews, pack)
         if not pack_reviews and pack.pack_kind not in (PackKind.LECTURE, PackKind.LECTURE_COMPILED):
             continue
         media_by = _sync_pack_media(output_root, pack, pack_reviews)
@@ -277,11 +283,16 @@ def process_path(
             "(expected PDF qbanks, PNG/JPG screenshots, or .html lecture files)"
         )
 
+    mark_run_started()
     ran: list[RunLogEntry] = []
     ignored: list[RunLogEntry] = []
     processed: list[QuestionReview] = []
 
     for group in groups:
+        if run_budget_exceeded():
+            print("Run budget reached; stopping new groups (packs will still rebuild).")
+            break
+
         review_path = reviews_dir(output_root, group.track) / f"{group.id}.json"
         kind_label = group.kind.value
         summary = _source_summary(group)
@@ -298,14 +309,19 @@ def process_path(
             ignored.append(RunLogEntry(kind_label, group.id, summary))
             continue
 
-        review = _process_group(
-            group,
-            output_root,
-            model=model,
-            max_cards=max_cards,
-            fixture=fixture,
-            input_roots=input_roots,
-        )
+        print(f"Processing {kind_label} {group.id}")
+        try:
+            review = _process_group(
+                group,
+                output_root,
+                model=model,
+                max_cards=max_cards,
+                fixture=fixture,
+                input_roots=input_roots,
+            )
+        except Exception as exc:  # noqa: BLE001 - continue nightly run
+            print(f"Failed {group.id}: {exc}")
+            continue
         processed.append(review)
         ran.append(RunLogEntry(kind_label, group.id, summary))
 
@@ -337,10 +353,10 @@ def build_from_reviews(
         review = load_review(path)
         review = filter_valid_cards(review, max_cards=max_cards)
         save_review(review, path)
-        media_by = sync_media_for_reviews([review], track_media_dir(output_root, review.track))
-        write_item_preview(review, path.with_suffix(".html"), media_by_review=media_by)
+        sync_media_for_reviews([review], track_media_dir(output_root, review.track))
         all_reviews.append(review)
 
+    cleanup_legacy_qbank_artifacts(output_root)
     for pack in packs_for_reviews(output_root, all_reviews, this_run_reviews=None):
         pack_reviews = reviews_for_pack(all_reviews, pack)
         if not pack_reviews and pack.pack_kind not in (PackKind.LECTURE, PackKind.LECTURE_COMPILED):

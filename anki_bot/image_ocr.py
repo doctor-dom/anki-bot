@@ -74,6 +74,10 @@ def configure_tesseract() -> bool:
     return True
 
 
+def png_keep_ocr_text() -> bool:
+    return os.getenv("ANKI_BOT_PNG_KEEP_OCR", "").strip().lower() in {"1", "true", "yes"}
+
+
 def png_input_mode() -> PngInputMode:
     raw = os.getenv("ANKI_BOT_PNG_MODE", "auto").strip().lower()
     try:
@@ -262,6 +266,15 @@ def prepare_png_question_input(
         )
 
     if not looks_like_mcq(combined):
+        if png_keep_ocr_text():
+            warnings.append("OCR text kept (ANKI_BOT_PNG_KEEP_OCR); vision only for figure pages")
+            return PngPrepareResult(
+                text=combined,
+                used_vision=bool(vision_paths),
+                vision_paths=tuple(vision_paths),
+                used_ocr=True,
+                warnings=tuple(warnings),
+            )
         warnings.append("OCR text does not look like a full MCQ; using vision PNG")
         return PngPrepareResult(
             text="",

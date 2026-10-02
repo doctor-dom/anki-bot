@@ -56,8 +56,9 @@ def iter_review_json_paths(output_root: Path) -> list[Path]:
 class PackKind(str, Enum):
     LECTURE = "lecture"
     LECTURE_COMPILED = "lecture_compiled"
-    QBANK_COMPILED = "qbank_compiled"
-    QBANK_RUN = "qbank_run"
+    QBANK_ALL = "qbank_all"
+    QBANK_TOPIC = "qbank_topic"
+    QBANK_FOLDER = "qbank_folder"
 
 
 def slugify_label(name: str) -> str:
@@ -94,7 +95,8 @@ class OutputPack:
     apkg_path: Path
     pack_kind: PackKind = PackKind.LECTURE
     track: str = "misc"
-    run_count: int = 0
+    topic_key: str = ""
+    folder_key: str = ""
 
 
 def lecture_pack(output_root: Path, pack_id: str, *, track: str) -> OutputPack:
@@ -110,21 +112,6 @@ def lecture_pack(output_root: Path, pack_id: str, *, track: str) -> OutputPack:
     )
 
 
-def qbank_run_pack(output_root: Path, track: str, question_count: int) -> OutputPack:
-    track_slug = normalize_track(track)
-    label = f"qbank-{track_slug}{question_count}"
-    track_root = track_output_root(output_root, track_slug)
-    return OutputPack(
-        label=label,
-        deck_name=f"HUB::{label}",
-        html_path=track_root / f"{label}-high-yield.html",
-        apkg_path=ankideck_dir(output_root, track_slug) / f"{label}.apkg",
-        pack_kind=PackKind.QBANK_RUN,
-        track=track_slug,
-        run_count=question_count,
-    )
-
-
 def parse_numbered_topic_from_id(review_id: str) -> tuple[int | None, str | None]:
     """Parse ``12-endocrine`` / ``10-t1dm-honeymoon`` style ids."""
     base = review_id
@@ -134,6 +121,15 @@ def parse_numbered_topic_from_id(review_id: str) -> tuple[int | None, str | None
     if len(parts) >= 2 and parts[0].isdigit():
         return int(parts[0]), parts[1]
     return None, None
+
+
+def topic_key_for_review(review: QuestionReview) -> str:
+    if review.topic:
+        return slugify_label(review.topic)
+    _number, parsed = parse_numbered_topic_from_id(review.id)
+    if parsed:
+        return slugify_label(parsed)
+    return "other"
 
 
 def qbank_sort_key(review: QuestionReview) -> tuple[str, int, str]:
@@ -157,6 +153,86 @@ def sort_lecture_reviews(reviews: list[QuestionReview]) -> list[QuestionReview]:
     return sorted(reviews, key=lambda r: (lecture_pack_label(r), r.id.lower()))
 
 
+def _folder_key_from_relpath(relpath: str, track: str) -> str | None:
+    normalized = relpath.replace("\\", "/").strip("/")
+    if "/" not in normalized:
+        return None
+    parent = normalized.rsplit("/", 1)[0]
+    track_slug = normalize_track(track)
+    parts = parent.split("/")
+    if parts and parts[0].lower() == track_slug:
+        parts = parts[1:]
+    if not parts:
+        return None
+    return "/".join(parts)
+
+
+def review_input_folder_key(review: QuestionReview) -> str | None:
+    """Input folder path under the track (e.g. ``abp-qbank-10``), or None at track root."""
+    track = normalize_track(review.track)
+    for entry in review.source_fingerprint:
+        if entry.relpath:
+            key = _folder_key_from_relpath(entry.relpath, track)
+            if key:
+                return key
+
+    for raw in (*review.source_images, *review.source_pdfs, *review.source_html):
+        if not raw:
+            continue
+        path = Path(raw)
+        parent_name = path.parent.name.lower()
+        if not parent_name or parent_name == track:
+            continue
+        if parent_name in {"input", "screenshots", "images", "qbank-html"}:
+            continue
+        return slugify_label(path.parent.name)
+    return None
+
+
+def qbank_all_pack(output_root: Path, track: str) -> OutputPack:
+    track_slug = normalize_track(track)
+    label = f"all-{track_slug}"
+    track_root = track_output_root(output_root, track_slug)
+    return OutputPack(
+        label=label,
+        deck_name=f"HUB::{label}",
+        html_path=track_root / f"{label}-high-yield.html",
+        apkg_path=ankideck_dir(output_root, track_slug) / f"{label}.apkg",
+        pack_kind=PackKind.QBANK_ALL,
+        track=track_slug,
+    )
+
+
+def qbank_topic_pack(output_root: Path, track: str, topic_key: str) -> OutputPack:
+    track_slug = normalize_track(track)
+    label = topic_key
+    track_root = track_output_root(output_root, track_slug)
+    return OutputPack(
+        label=label,
+        deck_name=f"HUB::{track_slug}::{label}",
+        html_path=track_root / "topics" / f"{label}-high-yield.html",
+        apkg_path=ankideck_dir(output_root, track_slug) / f"{label}.apkg",
+        pack_kind=PackKind.QBANK_TOPIC,
+        track=track_slug,
+        topic_key=topic_key,
+    )
+
+
+def qbank_folder_pack(output_root: Path, track: str, folder_key: str) -> OutputPack:
+    track_slug = normalize_track(track)
+    folder_path = track_output_root(output_root, track_slug) / Path(folder_key)
+    label = slugify_label(Path(folder_key).name)
+    return OutputPack(
+        label=label,
+        deck_name=f"HUB::{track_slug}::{folder_key.replace('/', '::')}",
+        html_path=folder_path / f"{label}-high-yield.html",
+        apkg_path=folder_path / ANKIDECK_DIRNAME / f"{label}.apkg",
+        pack_kind=PackKind.QBANK_FOLDER,
+        track=track_slug,
+        folder_key=folder_key,
+    )
+
+
 def lecture_compiled_pack(output_root: Path, track: str) -> OutputPack:
     track_slug = normalize_track(track)
     label = f"lectures-{track_slug}"
@@ -171,18 +247,28 @@ def lecture_compiled_pack(output_root: Path, track: str) -> OutputPack:
     )
 
 
-def qbank_compiled_pack(output_root: Path, track: str) -> OutputPack:
-    track_slug = normalize_track(track)
-    label = f"qbank-{track_slug}"
-    track_root = track_output_root(output_root, track_slug)
-    return OutputPack(
-        label=label,
-        deck_name=f"HUB::{label}",
-        html_path=track_root / f"{label}-high-yield.html",
-        apkg_path=ankideck_dir(output_root, track_slug) / f"{label}.apkg",
-        pack_kind=PackKind.QBANK_COMPILED,
-        track=track_slug,
-    )
+def cleanup_legacy_qbank_artifacts(output_root: Path) -> None:
+    """Remove per-question HTML and old qbank-* compiled/run deliverables."""
+    if not output_root.is_dir():
+        return
+
+    for json_path in iter_review_json_paths(output_root):
+        html_path = json_path.with_suffix(".html")
+        if html_path.is_file():
+            html_path.unlink()
+
+    for child in sorted(output_root.iterdir()):
+        if not child.is_dir():
+            continue
+        if child.name.lower() in _OUTPUT_NON_TRACK_DIRNAMES:
+            continue
+        track_slug = child.name.lower()
+        for html_path in child.glob("qbank-*-high-yield.html"):
+            html_path.unlink(missing_ok=True)
+        deck_dir = child / ANKIDECK_DIRNAME
+        if deck_dir.is_dir():
+            for apkg in deck_dir.glob("qbank-*.apkg"):
+                apkg.unlink(missing_ok=True)
 
 
 def packs_for_reviews(
@@ -191,6 +277,7 @@ def packs_for_reviews(
     *,
     this_run_reviews: list[QuestionReview] | None = None,
 ) -> list[OutputPack]:
+    del this_run_reviews  # all qbank packs are rebuilt from every review JSON each run
     packs: list[OutputPack] = []
 
     for review in all_reviews:
@@ -208,23 +295,22 @@ def packs_for_reviews(
     question_reviews = [r for r in all_reviews if r.kind == ContentKind.QUESTION]
     tracks = sorted({normalize_track(r.track) for r in question_reviews})
     for track in tracks:
-        packs.append(qbank_compiled_pack(output_root, track))
+        packs.append(qbank_all_pack(output_root, track))
+        track_questions = [r for r in question_reviews if normalize_track(r.track) == track]
+        topic_keys = sorted({topic_key_for_review(r) for r in track_questions})
+        for topic_key in topic_keys:
+            packs.append(qbank_topic_pack(output_root, track, topic_key))
+        folder_keys = sorted(
+            {key for r in track_questions if (key := review_input_folder_key(r))}
+        )
+        for folder_key in folder_keys:
+            packs.append(qbank_folder_pack(output_root, track, folder_key))
 
     lecture_tracks = sorted(
         {normalize_track(r.track) for r in all_reviews if r.kind == ContentKind.LECTURE}
     )
     for track in lecture_tracks:
         packs.append(lecture_compiled_pack(output_root, track))
-
-    if this_run_reviews:
-        run_questions = [r for r in this_run_reviews if r.kind == ContentKind.QUESTION]
-        by_track: dict[str, list[QuestionReview]] = {}
-        for review in run_questions:
-            track = normalize_track(review.track)
-            by_track.setdefault(track, []).append(review)
-        for track, reviews in sorted(by_track.items()):
-            if reviews:
-                packs.append(qbank_run_pack(output_root, track, len(reviews)))
 
     return packs
 
@@ -235,6 +321,7 @@ def reviews_for_pack(
     *,
     this_run_ids: frozenset[str] | None = None,
 ) -> list[QuestionReview]:
+    del this_run_ids
     pack_track = normalize_track(pack.track)
     if pack.pack_kind == PackKind.LECTURE:
         return [
@@ -259,9 +346,17 @@ def reviews_for_pack(
         if r.kind == ContentKind.QUESTION and normalize_track(r.track) == pack_track
     ]
 
-    if pack.pack_kind == PackKind.QBANK_COMPILED:
+    if pack.pack_kind == PackKind.QBANK_ALL:
         return sort_qbank_reviews(questions)
 
-    if this_run_ids is None:
-        return sort_qbank_reviews(questions)
-    return sort_qbank_reviews([r for r in questions if r.id in this_run_ids])
+    if pack.pack_kind == PackKind.QBANK_TOPIC:
+        return sort_qbank_reviews(
+            [r for r in questions if topic_key_for_review(r) == pack.topic_key]
+        )
+
+    if pack.pack_kind == PackKind.QBANK_FOLDER:
+        return sort_qbank_reviews(
+            [r for r in questions if review_input_folder_key(r) == pack.folder_key]
+        )
+
+    return sort_qbank_reviews(questions)

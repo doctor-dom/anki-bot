@@ -1,16 +1,20 @@
 from pathlib import Path
 
-from anki_bot.models import ContentKind, ItemInfo, QuestionReview
+from anki_bot.models import ContentKind, ItemInfo, QuestionReview, SourceFileFingerprint
 from anki_bot.outputs import (
     PackKind,
     lecture_compiled_pack,
     lecture_pack,
     lecture_pack_label,
     packs_for_reviews,
-    qbank_compiled_pack,
-    qbank_run_pack,
+    qbank_all_pack,
+    qbank_folder_pack,
+    qbank_topic_pack,
+    review_input_folder_key,
+    reviews_for_pack,
     slugify_label,
     topic_from_group_id,
+    topic_key_for_review,
 )
 
 
@@ -30,12 +34,17 @@ def test_labeled_pack_paths(tmp_path: Path) -> None:
     assert pack.html_path == tmp_path / "abp" / "adrenal-high-yield.html"
     assert pack.deck_name == "HUB::adrenal"
 
-    qpack = qbank_run_pack(tmp_path, "abp", 12)
-    assert qpack.apkg_path == tmp_path / "abp" / "ankideck" / "qbank-abp12.apkg"
-    assert qpack.html_path == tmp_path / "abp" / "qbank-abp12-high-yield.html"
+    all_pack = qbank_all_pack(tmp_path, "abp")
+    assert all_pack.apkg_path == tmp_path / "abp" / "ankideck" / "all-abp.apkg"
+    assert all_pack.html_path == tmp_path / "abp" / "all-abp-high-yield.html"
 
-    compiled = qbank_compiled_pack(tmp_path, "abp")
-    assert compiled.apkg_path == tmp_path / "abp" / "ankideck" / "qbank-abp.apkg"
+    topic = qbank_topic_pack(tmp_path, "abp", "endocrine")
+    assert topic.html_path == tmp_path / "abp" / "topics" / "endocrine-high-yield.html"
+    assert topic.apkg_path == tmp_path / "abp" / "ankideck" / "endocrine.apkg"
+
+    folder = qbank_folder_pack(tmp_path, "abp", "abp-qbank-10")
+    assert folder.html_path == tmp_path / "abp" / "abp-qbank-10" / "abp-qbank-10-high-yield.html"
+    assert folder.apkg_path == tmp_path / "abp" / "abp-qbank-10" / "ankideck" / "abp-qbank-10.apkg"
 
 
 def test_lecture_pack_label_short_id() -> None:
@@ -45,11 +54,6 @@ def test_lecture_pack_label_short_id() -> None:
         item=ItemInfo(stem_gist="x"),
     )
     assert lecture_pack_label(review) == "infectious-disease"
-
-
-def test_qbank_run_label() -> None:
-    pack = qbank_run_pack(Path("output"), "endo", 2)
-    assert pack.label == "qbank-endo2"
 
 
 def test_lecture_compiled_pack_path(tmp_path: Path) -> None:
@@ -68,3 +72,28 @@ def test_packs_include_lecture_compiled(tmp_path: Path) -> None:
     packs = packs_for_reviews(tmp_path, [review])
     kinds = {p.pack_kind for p in packs}
     assert PackKind.LECTURE_COMPILED in kinds
+
+
+def test_qbank_packs_all_topic_folder(tmp_path: Path) -> None:
+    review = QuestionReview(
+        id="12-endocrine",
+        kind=ContentKind.QUESTION,
+        track="abp",
+        item=ItemInfo(stem_gist="x"),
+        source_fingerprint=[
+            SourceFileFingerprint(
+                size=1,
+                relpath="abp-qbank-10/12-endocrine.png",
+                sha256="a",
+            )
+        ],
+    )
+    assert topic_key_for_review(review) == "endocrine"
+    assert review_input_folder_key(review) == "abp-qbank-10"
+
+    packs = packs_for_reviews(tmp_path, [review])
+    kinds = {p.pack_kind for p in packs}
+    assert kinds == {PackKind.QBANK_ALL, PackKind.QBANK_TOPIC, PackKind.QBANK_FOLDER}
+
+    all_pack = next(p for p in packs if p.pack_kind == PackKind.QBANK_ALL)
+    assert reviews_for_pack([review], all_pack) == [review]

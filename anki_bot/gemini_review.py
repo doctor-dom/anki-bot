@@ -143,11 +143,24 @@ def _pdf_part(path: Path) -> types.Part:
     return types.Part.from_bytes(data=data, mime_type="application/pdf")
 
 
+def _gemini_http_timeout_ms() -> int | None:
+    raw = os.getenv("ANKI_BOT_GEMINI_TIMEOUT_S", "").strip().lower()
+    if raw in {"", "0", "off", "none", "false"}:
+        return None
+    return int(float(raw) * 1000)
+
+
 def get_client() -> genai.Client:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError(
             "GEMINI_API_KEY is not set. Copy .env.example to .env and add your key."
+        )
+    timeout_ms = _gemini_http_timeout_ms()
+    if timeout_ms is not None:
+        return genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=timeout_ms),
         )
     return genai.Client(api_key=api_key)
 

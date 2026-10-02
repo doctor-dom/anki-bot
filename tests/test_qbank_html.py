@@ -67,8 +67,8 @@ def test_process_qbank_html_fixture(tmp_path: Path) -> None:
     assert len(reviews) == 1
     assert reviews[0].kind == ContentKind.QUESTION
     assert (output / "abp" / "reviews" / "12-endocrine.json").exists()
-    assert (output / "abp" / "ankideck" / "qbank-abp.apkg").exists()
-    assert (output / "abp" / "ankideck" / "qbank-abp1.apkg").exists()
+    assert (output / "abp" / "ankideck" / "all-abp.apkg").exists()
+    assert (output / "abp" / "topics" / "endocrine-high-yield.html").exists()
 
 
 def test_combine_question_html(tmp_path: Path) -> None:
