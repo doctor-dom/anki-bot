@@ -186,11 +186,11 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 | **Review JSON (internal)** | `output/<track>/reviews/<id>.json` | Same (e.g. `output/abp/reviews/12-endocrine.json`) |
 
-| **Color-coded HTML** | `output/<track>/<short-id>-high-yield.html`; **`output/<track>/<short-id>-illustrated.html`** (lectures) | **All track:** `all-<track>-high-yield.html`; **topic:** `topics/<topic>-high-yield.html`; **batch folder:** `<folder>/<folder>-high-yield.html` |
+| **Color-coded HTML** | `output/<track>/<short-id>-high-yield.html`; **`output/<track>/<short-id>-illustrated.html`** (lectures) | **All track:** `all-<track>-high-yield.html`; **board category:** `topics/<category>-high-yield.html`; **batch folder:** `<folder>/<folder>-high-yield.html` |
 | **All lectures in track** | **`output/<track>/lectures-<track>-high-yield.html`** (pearls + images) | — |
 | **Shared media** | `output/<track>/media/` (copied PNGs/JPGs; referenced from HTML and Anki) | Same |
 
-| **Anki deck** | `output/<track>/ankideck/<short-id>.apkg` | **All track:** `all-<track>.apkg`; **topic:** `ankideck/<topic>.apkg`; **batch folder:** `<folder>/ankideck/<folder>.apkg` |
+| **Anki deck** | `output/<track>/ankideck/<short-id>.apkg` | **All track:** `all-<track>.apkg`; **board category:** `ankideck/<category>.apkg`; **batch folder:** `<folder>/ankideck/<folder>.apkg` |
 
 | **Track** | First folder under `input/` (e.g. `abp`, `endo`); files directly in `input/` → `misc` | Same |
 
@@ -224,7 +224,7 @@ Choose one path below. Same CLI command; inputs and outputs differ.
 
 3. Per question: `output/<track>/reviews/<id>.json` (no per-question HTML).
 
-4. Import **`output/<track>/ankideck/all-<track>.apkg`**, or a topic/folder deck under `topics/` or the input batch folder.
+4. Import **`output/<track>/ankideck/all-<track>.apkg`**, a board-category deck (12 pediatric buckets such as `06-endocrinology-metabolic-genetics`), or a folder deck for the input batch. Category HTML is `output/<track>/topics/<category>-high-yield.html`.
 
 5. Edit JSON → `anki-bot build-apkg output` or `output\<track>\reviews`.
 

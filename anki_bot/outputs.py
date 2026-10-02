@@ -97,6 +97,7 @@ class OutputPack:
     track: str = "misc"
     topic_key: str = ""
     folder_key: str = ""
+    title: str = ""
 
 
 def lecture_pack(output_root: Path, pack_id: str, *, track: str) -> OutputPack:
@@ -130,6 +131,378 @@ def topic_key_for_review(review: QuestionReview) -> str:
     if parsed:
         return slugify_label(parsed)
     return "other"
+
+
+@dataclass(frozen=True)
+class BoardCategory:
+    """Broad pediatric board bucket used for nightly topic packs."""
+
+    key: str
+    title: str
+    order: int
+    aliases: tuple[str, ...] = ()
+
+
+# Nightly topic HTML/Anki packs use these buckets, not the fine filename topic.
+BOARD_CATEGORIES: tuple[BoardCategory, ...] = (
+    BoardCategory(
+        key="01-adolescent-behavioral",
+        title="Adolescent Medicine + STI + Sexual Health + Behavioral Health + Substance Abuse",
+        order=1,
+        aliases=(
+            "adolescent",
+            "adolescence",
+            "teen",
+            "sti",
+            "std",
+            "sexual",
+            "sexual-health",
+            "sexuality",
+            "contraception",
+            "pregnancy",
+            "gynecology",
+            "gynaecology",
+            "behavioral",
+            "behavioral-health",
+            "behavioural",
+            "psychiatry",
+            "psych",
+            "mental-health",
+            "adhd",
+            "autism",
+            "depression",
+            "anxiety",
+            "suicide",
+            "eating-disorder",
+            "anorexia",
+            "bulimia",
+            "substance",
+            "substance-abuse",
+            "addiction",
+            "opioid",
+            "cannabis",
+            "marijuana",
+            "tobacco",
+            "alcohol",
+            "chlamydia",
+            "gonorrhea",
+            "syphilis",
+            "child-abuse",
+            "maltreatment",
+        ),
+    ),
+    BoardCategory(
+        key="02-allergy-heme-onc-rheum",
+        title="Allergy + Immunology + Hematology + Oncology + Rheumatology",
+        order=2,
+        aliases=(
+            "allergy",
+            "allergic",
+            "allergic-rhinitis",
+            "anaphylaxis",
+            "urticaria",
+            "food-allergy",
+            "immunology",
+            "immune",
+            "immunodeficiency",
+            "hematology",
+            "haematology",
+            "heme",
+            "heme-onc",
+            "anemia",
+            "sickle",
+            "coagulation",
+            "coagulopathy",
+            "thrombosis",
+            "platelet",
+            "itp",
+            "hemophilia",
+            "neutropenia",
+            "oncology",
+            "onc",
+            "cancer",
+            "leukemia",
+            "lymphoma",
+            "malignancy",
+            "neuroblastoma",
+            "tumor",
+            "rheumatology",
+            "rheum",
+            "jia",
+            "lupus",
+            "vasculitis",
+            "kawasaki",
+        ),
+    ),
+    BoardCategory(
+        key="03-cardiology-pulmonology",
+        title="Cardiology + Pulmonology",
+        order=3,
+        aliases=(
+            "cardiology",
+            "cardio",
+            "cardiac",
+            "heart",
+            "murmur",
+            "chd",
+            "chf",
+            "arrhythmia",
+            "endocarditis",
+            "pulmonology",
+            "pulmonary",
+            "pulm",
+            "respiratory",
+            "lung",
+            "asthma",
+            "pneumonia",
+            "bronchiolitis",
+            "cf",
+            "cystic-fibrosis",
+        ),
+    ),
+    BoardCategory(
+        key="04-dermatology",
+        title="Dermatology",
+        order=4,
+        aliases=(
+            "dermatology",
+            "derm",
+            "skin",
+            "rash",
+            "eczema",
+            "acne",
+            "atopic-dermatitis",
+            "dermatitis",
+        ),
+    ),
+    BoardCategory(
+        key="05-emergency-msk-ophtho-ent",
+        title="Emergency Medicine + Orthopedics + Musculoskeletal + Ophthalmology + ENT",
+        order=5,
+        aliases=(
+            "emergency",
+            "trauma",
+            "toxicology",
+            "tox",
+            "poisoning",
+            "orthopedic",
+            "orthopedics",
+            "orthopaedics",
+            "ortho",
+            "msk",
+            "musculoskeletal",
+            "sports",
+            "sports-med",
+            "sports-medicine",
+            "fracture",
+            "ophthalmology",
+            "ophtho",
+            "ophth",
+            "eye",
+            "strabismus",
+            "conjunctivitis",
+            "ent",
+            "otolaryngology",
+            "otitis",
+            "pharyngitis",
+            "sinusitis",
+            "croup",
+            "epiglottitis",
+        ),
+    ),
+    BoardCategory(
+        key="06-endocrinology-metabolic-genetics",
+        title="Endocrinology + Metabolic Disorders + Genetics",
+        order=6,
+        aliases=(
+            "endocrinology",
+            "endocrine",
+            "endo",
+            "metabolic",
+            "metabolic-disorders",
+            "metabolism",
+            "inborn",
+            "inborn-error",
+            "inborn-errors",
+            "genetics",
+            "genetic",
+            "chromosome",
+            "diabetes",
+            "t1dm",
+            "t2dm",
+            "dka",
+            "thyroid",
+            "adrenal",
+            "cah",
+            "puberty",
+            "growth-hormone",
+            "rickets",
+            "pku",
+        ),
+    ),
+    BoardCategory(
+        key="07-gastroenterology",
+        title="Gastroenterology",
+        order=7,
+        aliases=(
+            "gastroenterology",
+            "gastrointestinal",
+            "gastro",
+            "gi",
+            "hepatology",
+            "liver",
+            "ibd",
+            "celiac",
+            "constipation",
+            "gerd",
+            "heartburn",
+        ),
+    ),
+    BoardCategory(
+        key="08-preventative-pediatrics",
+        title="Preventative Pediatrics + Growth + Development + Vaccines + Nutrition",
+        order=8,
+        aliases=(
+            "preventative",
+            "preventive",
+            "preventative-pediatrics",
+            "preventive-pediatrics",
+            "prevention",
+            "well-child",
+            "well-visit",
+            "growth",
+            "development",
+            "developmental",
+            "milestone",
+            "vaccine",
+            "vaccines",
+            "immunization",
+            "immunizations",
+            "nutrition",
+            "nutritional",
+            "feeding",
+            "obesity",
+            "ftt",
+            "failure-to-thrive",
+        ),
+    ),
+    BoardCategory(
+        key="09-infectious-disease",
+        title="Infectious Disease",
+        order=9,
+        aliases=(
+            "infectious-disease",
+            "infectious",
+            "infection",
+            "id",
+            "hiv",
+            "sepsis",
+            "meningitis",
+            "osteomyelitis",
+            "antibiotic",
+            "antimicrobial",
+        ),
+    ),
+    BoardCategory(
+        key="10-neonatology",
+        title="Neonatology",
+        order=10,
+        aliases=(
+            "neonatology",
+            "neonate",
+            "neonatal",
+            "newborn",
+            "nicu",
+            "prematurity",
+            "preterm",
+            "jaundice",
+            "hyperbilirubinemia",
+            "bilirubin",
+        ),
+    ),
+    BoardCategory(
+        key="11-nephrology",
+        title="Nephrology",
+        order=11,
+        aliases=(
+            "nephrology",
+            "nephro",
+            "renal",
+            "kidney",
+            "urology",
+            "urologic",
+            "uti",
+            "pyelonephritis",
+            "hematuria",
+            "proteinuria",
+        ),
+    ),
+    BoardCategory(
+        key="12-neurology",
+        title="Neurology",
+        order=12,
+        aliases=(
+            "neurology",
+            "neuro",
+            "neurologic",
+            "seizure",
+            "epilepsy",
+            "headache",
+            "migraine",
+            "concussion",
+            "cerebral-palsy",
+        ),
+    ),
+)
+
+OTHER_BOARD_CATEGORY = BoardCategory(key="other", title="Other", order=99)
+
+_BOARD_ALIAS_ROWS: tuple[tuple[tuple[str, ...], BoardCategory], ...] = tuple(
+    (tuple(alias.split("-")), category)
+    for category in BOARD_CATEGORIES
+    for alias in category.aliases
+)
+
+
+def fine_topic_slug(review: QuestionReview) -> str:
+    """Filename or review topic, including words after the first hyphen segment."""
+    if review.topic:
+        return slugify_label(review.topic)
+    base = review.id
+    if base.endswith("-lecture"):
+        base = base[: -len("-lecture")]
+    parts = base.split("-", 1)
+    if len(parts) == 2 and parts[0].isdigit():
+        return slugify_label(parts[1])
+    return slugify_label(base)
+
+
+def _alias_in_tokens(tokens: tuple[str, ...], alias: tuple[str, ...]) -> bool:
+    width = len(alias)
+    if width == 0 or width > len(tokens):
+        return False
+    return any(tokens[index : index + width] == alias for index in range(len(tokens) - width + 1))
+
+
+def match_board_category(slug: str) -> BoardCategory:
+    """Map a fine topic slug onto a board category. Longer aliases win ties."""
+    tokens = tuple(part for part in slug.split("-") if part)
+    best: BoardCategory | None = None
+    best_len = -1
+    best_order = 10**9
+    for alias, category in _BOARD_ALIAS_ROWS:
+        matched = len(alias)
+        if not _alias_in_tokens(tokens, alias):
+            continue
+        if matched > best_len or (matched == best_len and category.order < best_order):
+            best = category
+            best_len = matched
+            best_order = category.order
+    return best or OTHER_BOARD_CATEGORY
+
+
+def board_category_for_review(review: QuestionReview) -> BoardCategory:
+    return match_board_category(fine_topic_slug(review))
 
 
 def qbank_sort_key(review: QuestionReview) -> tuple[str, int, str]:
@@ -203,18 +576,26 @@ def qbank_all_pack(output_root: Path, track: str) -> OutputPack:
     )
 
 
-def qbank_topic_pack(output_root: Path, track: str, topic_key: str) -> OutputPack:
+def qbank_topic_pack(
+    output_root: Path,
+    track: str,
+    topic_key: str,
+    *,
+    title: str = "",
+) -> OutputPack:
     track_slug = normalize_track(track)
     label = topic_key
+    display = title or label
     track_root = track_output_root(output_root, track_slug)
     return OutputPack(
         label=label,
-        deck_name=f"HUB::{track_slug}::{label}",
+        deck_name=f"HUB::{track_slug}::{display}",
         html_path=track_root / "topics" / f"{label}-high-yield.html",
         apkg_path=ankideck_dir(output_root, track_slug) / f"{label}.apkg",
         pack_kind=PackKind.QBANK_TOPIC,
         track=track_slug,
         topic_key=topic_key,
+        title=display,
     )
 
 
@@ -245,6 +626,34 @@ def lecture_compiled_pack(output_root: Path, track: str) -> OutputPack:
         pack_kind=PackKind.LECTURE_COMPILED,
         track=track_slug,
     )
+
+
+def prune_stale_topic_files(output_root: Path, packs: list[OutputPack]) -> None:
+    """Drop topic HTML and track decks that this rebuild no longer emits.
+
+    Narrow per-filename topic packs are replaced by board-category packs. Files
+    left from the previous layout would otherwise sync back to Drive.
+    """
+    if not output_root.is_dir():
+        return
+
+    keep_html = {pack.html_path.resolve() for pack in packs}
+    keep_apkg = {pack.apkg_path.resolve() for pack in packs}
+    tracks = {normalize_track(pack.track) for pack in packs}
+
+    for child in output_root.iterdir():
+        if not child.is_dir() or child.name.lower() not in tracks:
+            continue
+        topics_dir = child / "topics"
+        if topics_dir.is_dir():
+            for html_path in topics_dir.glob("*.html"):
+                if html_path.resolve() not in keep_html:
+                    html_path.unlink()
+        deck_dir = child / ANKIDECK_DIRNAME
+        if deck_dir.is_dir():
+            for apkg_path in deck_dir.glob("*.apkg"):
+                if apkg_path.resolve() not in keep_apkg:
+                    apkg_path.unlink()
 
 
 def cleanup_legacy_qbank_artifacts(output_root: Path) -> None:
@@ -297,9 +706,19 @@ def packs_for_reviews(
     for track in tracks:
         packs.append(qbank_all_pack(output_root, track))
         track_questions = [r for r in question_reviews if normalize_track(r.track) == track]
-        topic_keys = sorted({topic_key_for_review(r) for r in track_questions})
-        for topic_key in topic_keys:
-            packs.append(qbank_topic_pack(output_root, track, topic_key))
+        categories = sorted(
+            {board_category_for_review(r) for r in track_questions},
+            key=lambda category: (category.order, category.key),
+        )
+        for category in categories:
+            packs.append(
+                qbank_topic_pack(
+                    output_root,
+                    track,
+                    category.key,
+                    title=category.title,
+                )
+            )
         folder_keys = sorted(
             {key for r in track_questions if (key := review_input_folder_key(r))}
         )
@@ -351,7 +770,7 @@ def reviews_for_pack(
 
     if pack.pack_kind == PackKind.QBANK_TOPIC:
         return sort_qbank_reviews(
-            [r for r in questions if topic_key_for_review(r) == pack.topic_key]
+            [r for r in questions if board_category_for_review(r).key == pack.topic_key]
         )
 
     if pack.pack_kind == PackKind.QBANK_FOLDER:

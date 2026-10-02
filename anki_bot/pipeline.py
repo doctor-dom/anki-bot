@@ -23,6 +23,7 @@ from anki_bot.outputs import (
     cleanup_legacy_qbank_artifacts,
     iter_review_json_paths,
     packs_for_reviews,
+    prune_stale_topic_files,
     reviews_dir,
     reviews_for_pack,
 )
@@ -190,9 +191,10 @@ def _write_pack_artifacts(
         write_high_yield_html(
             pack_reviews,
             pack.html_path,
-            group_by_topic=False,
+            group_by_topic=True,
             include_figures=True,
             media_by_review=media_by,
+            title=pack.title or None,
         )
         written.append(pack.html_path)
     else:
@@ -227,12 +229,14 @@ def _write_output_packs(
 ) -> list[Path]:
     written: list[Path] = []
     cleanup_legacy_qbank_artifacts(output_root)
-
-    for pack in packs_for_reviews(
+    packs = packs_for_reviews(
         output_root,
         all_reviews,
         this_run_reviews=this_run_reviews,
-    ):
+    )
+    prune_stale_topic_files(output_root, packs)
+
+    for pack in packs:
         pack_reviews = reviews_for_pack(all_reviews, pack)
         if not pack_reviews and pack.pack_kind not in (PackKind.LECTURE, PackKind.LECTURE_COMPILED):
             continue
@@ -357,7 +361,10 @@ def build_from_reviews(
         all_reviews.append(review)
 
     cleanup_legacy_qbank_artifacts(output_root)
-    for pack in packs_for_reviews(output_root, all_reviews, this_run_reviews=None):
+    packs = packs_for_reviews(output_root, all_reviews, this_run_reviews=None)
+    if reviews_path.resolve() == output_root.resolve():
+        prune_stale_topic_files(output_root, packs)
+    for pack in packs:
         pack_reviews = reviews_for_pack(all_reviews, pack)
         if not pack_reviews and pack.pack_kind not in (PackKind.LECTURE, PackKind.LECTURE_COMPILED):
             continue
