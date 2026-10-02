@@ -90,9 +90,9 @@ Missing Tesseract in `auto` warns once and uses full vision. Set `ANKI_BOT_TESSE
 
 ## Compilation: all-track, topic, folder
 
-`packs_for_reviews` emits one set of packs per track that has `kind: question` reviews. A track with questions always gets the all-track pack, one topic pack per distinct topic key, and one folder pack per distinct input folder key. Questions with no folder key (files directly under `input/<track>/`) appear in all-track and topic packs only.
+`packs_for_reviews` emits one set of packs per track that has `kind: question` reviews. A track with questions always gets the all-track pack, one topic pack per board category that has questions, and one folder pack per distinct input folder key. Questions with no folder key (files directly under `input/<track>/`) appear in all-track and topic packs only.
 
-Sort inside every qbank pack: topic key, then the leading number in the id, then id. Ids without a leading number sort last. The HTML heading for a missing topic is `Other`.
+Sort inside every qbank pack: fine topic key, then the leading number in the id, then id. Ids without a leading number sort last. The HTML heading for a missing fine topic is `Other`.
 
 ### All-track (`PackKind.QBANK_ALL`)
 
@@ -108,21 +108,30 @@ HTML is grouped by topic (`group_by_topic=True`) and includes figures.
 
 ### Topic (`PackKind.QBANK_TOPIC`)
 
-Questions whose topic key matches.
+Questions in one pediatric board category. Filename topics are still parsed as before (`12-endocrine` → `endocrine`, `10-t1dm-honeymoon` → `t1dm-honeymoon`, or `review.topic` when set) and then mapped onto these buckets:
 
-Topic key, in order:
+1. Adolescent Medicine + STI + Sexual Health + Behavioral Health + Substance Abuse (`01-adolescent-behavioral`)
+2. Allergy + Immunology + Hematology + Oncology + Rheumatology (`02-allergy-heme-onc-rheum`)
+3. Cardiology + Pulmonology (`03-cardiology-pulmonology`)
+4. Dermatology (`04-dermatology`)
+5. Emergency Medicine + Orthopedics + Musculoskeletal + Ophthalmology + ENT (`05-emergency-msk-ophtho-ent`)
+6. Endocrinology + Metabolic Disorders + Genetics (`06-endocrinology-metabolic-genetics`)
+7. Gastroenterology (`07-gastroenterology`)
+8. Preventative Pediatrics + Growth + Development + Vaccines + Nutrition (`08-preventative-pediatrics`)
+9. Infectious Disease (`09-infectious-disease`)
+10. Neonatology (`10-neonatology`)
+11. Nephrology (`11-nephrology`)
+12. Neurology (`12-neurology`)
 
-1. `slugify(review.topic)` when `topic` is non-empty.
-2. Else the second hyphen segment of a numeric id: `12-endocrine` → `endocrine`, `10-t1dm-honeymoon` → `t1dm`.
-3. Else `other`.
+Unmatched names land in `other`. A longer alias wins when a name could fit two buckets (`growth-hormone` → endocrinology, `growth` → preventative pediatrics).
 
 | | Path |
 |--|------|
-| HTML | `output/abp/topics/endocrine-high-yield.html` |
-| Anki | `output/abp/ankideck/endocrine.apkg` |
-| Deck name | `HUB::abp::endocrine` |
+| HTML | `output/abp/topics/06-endocrinology-metabolic-genetics-high-yield.html` |
+| Anki | `output/abp/ankideck/06-endocrinology-metabolic-genetics.apkg` |
+| Deck name | `HUB::abp::Endocrinology + Metabolic Disorders + Genetics` |
 
-HTML is a single topic (`group_by_topic=False`) and includes figures. Topic `.apkg` files share `output/<track>/ankideck/` with the all-track deck and with lecture decks. Names differ: `all-abp.apkg` vs `endocrine.apkg` vs `adrenal.apkg`.
+HTML is grouped by the original filename topic (`group_by_topic=True`) and includes figures. Topic `.apkg` files share `output/<track>/ankideck/` with the all-track deck and with lecture decks. A rebuild deletes topic HTML and track decks that the current packs no longer emit, so old narrow files such as `endocrine.apkg` do not stay in Drive.
 
 ### Folder (`PackKind.QBANK_FOLDER`)
 
